@@ -23,6 +23,13 @@ Thoroughly review: $ARGUMENTS
    reasoning (A → C without B), missing prerequisites or dependencies,
    questions raised but never answered, jargon introduced without explanation.
 
+Only report gaps that cause concrete problems for the reader — a missing
+step that blocks someone from following a process, or a dependency that
+would cause an error. "Nice to have" additions (e.g. a section that other
+documents of this type often include, or context that would be helpful but
+isn't strictly necessary) are not findings. The goal is to surface what's
+wrong, not to describe the ideal version of the document.
+
 ## Severity
 
 - **CRITICAL**: Would cause wrong decisions, broken implementations, or
@@ -55,6 +62,8 @@ End with a summary line: X critical, Y medium, Z low findings.
 
 - Always Read the target file(s) before reviewing. Never review from memory.
 - Output language matches the language of the reviewed document.
+  If the prompt is in a different language than the document, the document
+  wins — the review should be readable alongside the content it refers to.
 - Do not modify any files. Findings are suggestions, not corrections.
 - If $ARGUMENTS contains a glob pattern or directory, use Glob to resolve
   file paths first. For multiple files, review each one and group findings
