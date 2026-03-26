@@ -6,11 +6,11 @@ Personal collection of [Claude Code](https://docs.anthropic.com/en/docs/claude-c
 
 | Skill | Description |
 |-------|-------------|
-| [check-md](skills/check-md/) | Review markdown documents for factual errors, logic gaps, and missing pieces |
+| [check-md](skills/check-md/) | Review markdown documents for factual errors, logic breaks, and gaps |
 
 ## Usage
 
-Copy a skill folder into your project's `.claude/skills/` directory, or reference it directly.
+Copy a skill folder into your project's `.claude/skills/` directory.
 
 ## Adding a new skill
 

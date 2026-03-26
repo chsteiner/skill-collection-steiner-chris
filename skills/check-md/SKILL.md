@@ -59,5 +59,7 @@ End with a summary line: X critical, Y medium, Z low findings.
 - If $ARGUMENTS contains a glob pattern or directory, use Glob to resolve
   file paths first. For multiple files, review each one and group findings
   by file.
+- If $ARGUMENTS is empty, ask the user which file(s) to review.
+  Do not guess or default to reviewing all files silently.
 - Be rigorous. Flag real problems. Skip stylistic nitpicks unless they
   cause actual confusion.
