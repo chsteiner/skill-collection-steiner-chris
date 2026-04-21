@@ -493,9 +493,10 @@ function parseNumberedList(lines, start, small) {
  * Handles: ***bold italic***, **bold**, __bold__, `code`, [text](url),
  *          *italic*, _italic_
  *
- * Known limitation: italic with underscores inside words (snake_case) may
- * be matched incorrectly. Avoid snake_case in prose; use code spans for
- * identifiers.
+ * Underscore-delimited patterns (__bold__, _italic_) use word-boundary
+ * guards so identifiers like `project_id` and `source_of_truth` are NOT
+ * treated as emphasis in prose. Asterisk patterns likewise protect *italic*
+ * from being matched inside word runs.
  */
 function parseInline(text) {
   if (!text) return [];
@@ -505,7 +506,7 @@ function parseInline(text) {
   const pattern = new RegExp(
     '(\\*\\*\\*([^*]+?)\\*\\*\\*)' +        // ***bold italic***
     '|(\\*\\*([^*]+?)\\*\\*)' +             // **bold**
-    '|(__([^_]+?)__)' +                     // __bold__
+    '|((?<![A-Za-z0-9])__([^_]+?)__(?![A-Za-z0-9]))' +       // __bold__
     '|(`([^`]+?)`)' +                       // `code`
     '|(\\[([^\\]]+)\\]\\(([^)]+)\\))' +     // [text](url)
     '|((?<![A-Za-z0-9])\\*([^*\\n]+?)\\*(?![A-Za-z0-9]))' +  // *italic*
