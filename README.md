@@ -31,6 +31,12 @@ npx skills update -g  # pull latest versions
 
 Alternative: copy a skill folder into your project's `.claude/skills/` directory manually.
 
+## Companion tools
+
+| Tool | Purpose |
+|------|---------|
+| [tools/marp-importer](tools/marp-importer/) | Google Apps Script that imports `marp-slides` markdown into the DHCraft Google Slides template. See [SETUP.md](tools/marp-importer/SETUP.md). |
+
 ## Adding a new skill
 
 1. Create a folder under `skills/` (kebab-case name)

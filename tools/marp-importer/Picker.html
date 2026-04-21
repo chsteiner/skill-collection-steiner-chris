@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <style>
+    body {
+      font-family: 'Google Sans', Roboto, Arial, sans-serif;
+      font-size: 14px;
+      margin: 0;
+      padding: 16px;
+      color: #202124;
+      background: #fff;
+    }
+
+    .drop-zone {
+      border: 2px dashed #dadce0;
+      border-radius: 8px;
+      padding: 40px 24px;
+      text-align: center;
+      cursor: pointer;
+      transition: border-color 0.15s, background-color 0.15s;
+      background: #fafafa;
+    }
+    .drop-zone:hover,
+    .drop-zone.drag-over {
+      border-color: #1a73e8;
+      background: #e8f0fe;
+    }
+    .drop-zone .icon {
+      font-size: 40px;
+      line-height: 1;
+      margin-bottom: 12px;
+    }
+    .drop-zone .main {
+      font-weight: 500;
+      margin-bottom: 4px;
+    }
+    .drop-zone .sub {
+      font-size: 12px;
+      color: #5f6368;
+    }
+
+    .file-info {
+      display: none;
+      margin-top: 12px;
+      padding: 12px 14px;
+      background: #e8f0fe;
+      border-radius: 4px;
+    }
+    .file-info.visible { display: block; }
+    .file-info .name {
+      font-weight: 500;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .file-info .size {
+      font-size: 12px;
+      color: #5f6368;
+      margin-top: 2px;
+    }
+
+    #status {
+      margin-top: 12px;
+      font-size: 13px;
+      color: #5f6368;
+      min-height: 36px;
+      line-height: 1.4;
+      white-space: pre-line;
+    }
+    #status.error { color: #d93025; }
+    #status.success { color: #188038; }
+    #status.warn { color: #b06000; }
+
+    .actions {
+      margin-top: 12px;
+      display: flex;
+      justify-content: flex-end;
+      gap: 8px;
+    }
+    button {
+      font-family: inherit;
+      font-size: 14px;
+      padding: 8px 16px;
+      border: 1px solid #dadce0;
+      border-radius: 4px;
+      background: #fff;
+      cursor: pointer;
+    }
+    button:hover { background: #f1f3f4; }
+    button.primary {
+      background: #1a73e8;
+      color: #fff;
+      border-color: #1a73e8;
+    }
+    button.primary:hover { background: #1967d2; }
+    button.primary:disabled {
+      background: #dadce0;
+      border-color: #dadce0;
+      color: #5f6368;
+      cursor: not-allowed;
+    }
+  </style>
+</head>
+<body>
+  <div class="drop-zone" id="dropzone">
+    <div class="icon">📄</div>
+    <div class="main">Drop .md file here or click to browse</div>
+    <div class="sub">Marp or plain markdown from your local machine</div>
+    <input type="file"
+           id="file-input"
+           accept=".md,.markdown,text/markdown,text/plain"
+           style="display:none">
+  </div>
+
+  <div class="file-info" id="file-info">
+    <div class="name" id="file-name"></div>
+    <div class="size" id="file-size"></div>
+  </div>
+
+  <div id="status"></div>
+
+  <div class="actions">
+    <button onclick="google.script.host.close()">Cancel</button>
+    <button id="import-btn" class="primary" onclick="runImport()" disabled>Import</button>
+  </div>
+
+  <script>
+    let fileData = null;
+
+    const dropzone = document.getElementById('dropzone');
+    const fileInput = document.getElementById('file-input');
+
+    dropzone.addEventListener('click', () => fileInput.click());
+    fileInput.addEventListener('change', e => {
+      if (e.target.files.length) handleFile(e.target.files[0]);
+    });
+    dropzone.addEventListener('dragover', e => {
+      e.preventDefault();
+      dropzone.classList.add('drag-over');
+    });
+    dropzone.addEventListener('dragleave', () => {
+      dropzone.classList.remove('drag-over');
+    });
+    dropzone.addEventListener('drop', e => {
+      e.preventDefault();
+      dropzone.classList.remove('drag-over');
+      if (e.dataTransfer.files.length) handleFile(e.dataTransfer.files[0]);
+    });
+
+    function handleFile(file) {
+      if (!/\.(md|markdown)$/i.test(file.name)) {
+        setStatus('Please pick an .md or .markdown file.', 'error');
+        return;
+      }
+      const reader = new FileReader();
+      reader.onload = e => {
+        fileData = { name: file.name, content: e.target.result };
+        showFileInfo(file.name, file.size);
+        document.getElementById('import-btn').disabled = false;
+        setStatus('', '');
+      };
+      reader.onerror = () => setStatus('Failed to read file.', 'error');
+      reader.readAsText(file, 'UTF-8');
+    }
+
+    function showFileInfo(name, size) {
+      document.getElementById('file-name').textContent = name;
+      document.getElementById('file-size').textContent = formatSize(size);
+      document.getElementById('file-info').classList.add('visible');
+    }
+
+    function formatSize(bytes) {
+      if (bytes < 1024) return bytes + ' bytes';
+      if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+      return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+    }
+
+    function runImport() {
+      if (!fileData) return;
+      document.getElementById('import-btn').disabled = true;
+      setStatus('Checking presentation…', '');
+      google.script.run
+        .withSuccessHandler(onPreFlight)
+        .withFailureHandler(err => {
+          setStatus('Error: ' + err.message, 'error');
+          document.getElementById('import-btn').disabled = false;
+        })
+        .getExistingSlideCount();
+    }
+
+    function onPreFlight(result) {
+      const existing = result.existingSlides || 0;
+      // Confirm replace only if there's more than 1 slide (fresh template
+      // has 1 placeholder slide, which we replace without asking).
+      if (existing > 1) {
+        const ok = confirm(
+          'This will replace ' + existing + ' existing slides in the current ' +
+          'presentation with the contents of "' + fileData.name + '".\n\n' +
+          'Continue?'
+        );
+        if (!ok) {
+          setStatus('Cancelled. No slides were changed.', '');
+          document.getElementById('import-btn').disabled = false;
+          return;
+        }
+      }
+      actuallyImport();
+    }
+
+    function actuallyImport() {
+      setStatus('Importing "' + fileData.name + '"…\nThis may take a moment for large decks.', '');
+      google.script.run
+        .withSuccessHandler(onImported)
+        .withFailureHandler(err => {
+          setStatus('Error: ' + err.message, 'error');
+          document.getElementById('import-btn').disabled = false;
+        })
+        .importFile(fileData);
+    }
+
+    function onImported(result) {
+      const cls = result.warnings > 0 ? 'warn' : 'success';
+      let msg = result.summary;
+      if (result.warnings > 0) {
+        msg += '\n' + result.warnings + ' warning(s). See Executions → Logs.';
+      }
+      setStatus(msg, cls);
+      document.getElementById('import-btn').disabled = false;
+
+      // Auto-close if rendering succeeded and nothing needs attention.
+      // With warnings, stay open so the user can read them before closing.
+      if (result.rendered > 0 && result.warnings === 0) {
+        setTimeout(() => google.script.host.close(), 1200);
+      }
+    }
+
+    function setStatus(msg, cls) {
+      const el = document.getElementById('status');
+      el.textContent = msg;
+      el.className = cls || '';
+    }
+  </script>
+</body>
+</html>
