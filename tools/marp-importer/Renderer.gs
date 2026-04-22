@@ -394,6 +394,16 @@ function flushPendingHeaderFills(presentation, warnings) {
   if (_pendingHeaderFills.length === 0) return;
 
   const presId = presentation.getId();
+
+  // Force SlidesApp mutations to commit server-side before the REST API
+  // batchUpdate runs. Two mechanisms combined:
+  //   1. A read of the presentation state (getSlides iterates the deck)
+  //   2. A short sleep. 2s is empirically enough for 60+ slide decks.
+  // Without this, batchUpdate fails with "object not found" because the
+  // tables just inserted via SlidesApp haven't propagated yet.
+  try { presentation.getSlides(); } catch (e) { /* non-fatal */ }
+  Utilities.sleep(2000);
+
   const requests = [];
   _pendingHeaderFills.forEach(fill => {
     for (let c = 0; c < fill.colCount; c++) {
