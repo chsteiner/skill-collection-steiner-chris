@@ -23,9 +23,19 @@ const TABLE_GAP_PT = 8;                // vertical gap between body and table / 
 const TABLE_CELL_FONT_SIZE_PT = 12;
 const TABLE_CELL_FONT_SIZE_SMALL_PT = 10;
 
+// Table header fill (Google neutral grey #f1f3f4). Change to DHCraft brand
+// color if desired: rgb values are 0..1, not 0..255.
+const TABLE_HEADER_FILL_RGB = { red: 0.945, green: 0.953, blue: 0.961 };
+
+// Collected during rendering, flushed once at the end of renderSlides. This
+// dodges a race where Slides.Presentations.batchUpdate can't yet see tables
+// created via SlidesApp in the same synchronous step.
+let _pendingHeaderFills = [];
+
 // ---- Entry point ----
 
 function renderSlides(presentation, slides, layoutMap, warnings) {
+  _pendingHeaderFills = [];
   const created = [];
   slides.forEach((slide, i) => {
     const slideNum = i + 1;
@@ -51,6 +61,8 @@ function renderSlides(presentation, slides, layoutMap, warnings) {
       warnings.push('Slide ' + slideNum + ' (' + slide.type + '): render error — ' + e.message);
     }
   });
+
+  flushPendingHeaderFills(presentation, warnings);
   return created;
 }
 
@@ -348,7 +360,75 @@ function renderOneTable(gSlide, block, left, top, width, slideNum, tableIdx, war
     }
   }
 
+  // Queue header-fill for batched flush after all SlidesApp mutations are
+  // done. Calling batchUpdate here fails with "object not found" because
+  // the table just created via SlidesApp hasn't propagated to the REST API
+  // yet.
+  if (rowCount > 0 && colCount > 0) {
+    try {
+      _pendingHeaderFills.push({
+        tableId: table.getObjectId(),
+        colCount: colCount,
+        slideNum: slideNum,
+        tableIdx: tableIdx
+      });
+    } catch (e) {
+      warnings.push('Slide ' + slideNum + ' table ' + tableIdx +
+                    ': could not queue header fill — ' + e.message);
+    }
+  }
+
   let h = 0;
   try { h = table.getHeight() || 0; } catch (e) { /* non-fatal */ }
   return h;
+}
+
+/**
+ * Apply all queued table-header background fills in one batchUpdate.
+ * Called once at the end of renderSlides, after every table has been
+ * inserted and the SlidesApp mutations have had a chance to commit.
+ *
+ * Chunked to stay well under the Slides API's per-request limit.
+ */
+function flushPendingHeaderFills(presentation, warnings) {
+  if (_pendingHeaderFills.length === 0) return;
+
+  const presId = presentation.getId();
+  const requests = [];
+  _pendingHeaderFills.forEach(fill => {
+    for (let c = 0; c < fill.colCount; c++) {
+      requests.push({
+        updateTableCellProperties: {
+          objectId: fill.tableId,
+          tableRange: {
+            location: { rowIndex: 0, columnIndex: c },
+            rowSpan: 1,
+            columnSpan: 1
+          },
+          tableCellProperties: {
+            tableCellBackgroundFill: {
+              solidFill: { color: { rgbColor: TABLE_HEADER_FILL_RGB } }
+            }
+          },
+          fields: 'tableCellBackgroundFill.solidFill.color'
+        }
+      });
+    }
+  });
+
+  console.log('Flushing ' + _pendingHeaderFills.length +
+              ' table header fills (' + requests.length + ' cell updates)');
+
+  const CHUNK = 50;
+  for (let i = 0; i < requests.length; i += CHUNK) {
+    const chunk = requests.slice(i, i + CHUNK);
+    try {
+      Slides.Presentations.batchUpdate({ requests: chunk }, presId);
+    } catch (e) {
+      warnings.push('Table header fill chunk ' + (i / CHUNK + 1) +
+                    ' failed — ' + e.message);
+    }
+  }
+
+  _pendingHeaderFills = [];
 }
