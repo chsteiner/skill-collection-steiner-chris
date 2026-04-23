@@ -363,20 +363,25 @@ function renderOneTable(gSlide, block, left, top, width, slideNum, tableIdx, war
  * Color the header row (row 0) of every table on the newly-rendered
  * slides.
  *
- * Object IDs returned by SlidesApp (both at insertion time and via later
- * getPageElements() reads) do not always match the server-side IDs that
- * the Slides REST API recognizes in the same invocation. Instead we
- * fetch the presentation via the REST API itself — those objectIds are
- * by definition what batchUpdate will accept.
+ * Object IDs returned by SlidesApp for newly-created tables can be
+ * temporary proxies that the Slides REST API does not yet recognize.
+ * Instead:
+ *   1. SlidesApp.flush() forces all pending mutations to commit server-side
+ *   2. Slides.Presentations.get() returns canonical server-side IDs
+ *   3. We match by SLIDE objectId (those match reliably between both APIs)
+ *      and read the TABLE objectIds from the REST response
  *
- * The freshly-inserted slides are the last N entries in the returned
- * slide list, where N = newSlides.length.
+ * That gives us IDs batchUpdate is guaranteed to accept.
  */
 function colorTableHeadersOnSlides(presentation, newSlides, warnings) {
   if (!newSlides || newSlides.length === 0) return;
 
-  // Give the backend a moment to propagate inserts before we query.
-  Utilities.sleep(3000);
+  // 1. Commit pending SlidesApp mutations. flush() is not documented on
+  //    SlidesApp everywhere, so guard against runtime absence.
+  try {
+    if (typeof SlidesApp.flush === 'function') SlidesApp.flush();
+  } catch (e) { /* non-fatal */ }
+  Utilities.sleep(2000);
 
   const presId = presentation.getId();
   let restPres;
@@ -388,47 +393,48 @@ function colorTableHeadersOnSlides(presentation, newSlides, warnings) {
     return;
   }
 
-  const allSlides = restPres.slides || [];
-  const startIdx = Math.max(0, allSlides.length - newSlides.length);
+  // Slide object IDs are stable between SlidesApp and REST, so we can
+  // identify our new slides reliably.
+  const newSlideIds = {};
+  newSlides.forEach(s => {
+    try { newSlideIds[s.getObjectId()] = true; } catch (e) { /* skip */ }
+  });
 
-  const tables = [];
-  for (let i = startIdx; i < allSlides.length; i++) {
-    const slide = allSlides[i];
-    (slide.pageElements || []).forEach(el => {
-      if (el.table) {
-        tables.push({
-          objectId: el.objectId,
-          columns: el.table.columns
+  const requests = [];
+  let tableCount = 0;
+
+  (restPres.slides || []).forEach(restSlide => {
+    if (!newSlideIds[restSlide.objectId]) return;
+
+    (restSlide.pageElements || []).forEach(el => {
+      if (!el.table) return;
+      tableCount++;
+      const tableId = el.objectId;
+      const colCount = el.table.columns;
+
+      for (let c = 0; c < colCount; c++) {
+        requests.push({
+          updateTableCellProperties: {
+            objectId: tableId,
+            tableRange: {
+              location: { rowIndex: 0, columnIndex: c },
+              rowSpan: 1,
+              columnSpan: 1
+            },
+            tableCellProperties: {
+              tableCellBackgroundFill: {
+                solidFill: { color: { rgbColor: TABLE_HEADER_FILL_RGB } }
+              }
+            },
+            fields: 'tableCellBackgroundFill.solidFill.color'
+          }
         });
       }
     });
-  }
-  if (tables.length === 0) return;
-
-  const requests = [];
-  tables.forEach(t => {
-    for (let c = 0; c < t.columns; c++) {
-      requests.push({
-        updateTableCellProperties: {
-          objectId: t.objectId,
-          tableRange: {
-            location: { rowIndex: 0, columnIndex: c },
-            rowSpan: 1,
-            columnSpan: 1
-          },
-          tableCellProperties: {
-            tableCellBackgroundFill: {
-              solidFill: { color: { rgbColor: TABLE_HEADER_FILL_RGB } }
-            }
-          },
-          fields: 'tableCellBackgroundFill.solidFill.color'
-        }
-      });
-    }
   });
 
   if (requests.length === 0) return;
-  console.log('Coloring ' + tables.length + ' table headers (' +
+  console.log('Coloring ' + tableCount + ' table headers (' +
               requests.length + ' cell updates) via REST-API IDs');
 
   const CHUNK = 50;
@@ -437,8 +443,8 @@ function colorTableHeadersOnSlides(presentation, newSlides, warnings) {
     try {
       Slides.Presentations.batchUpdate({ requests: chunk }, presId);
     } catch (e) {
-      warnings.push('Table header fill chunk ' + (i / CHUNK + 1) +
-                    ' failed — ' + e.message);
+      warnings.push('Table header fill chunk ' +
+                    (Math.floor(i / CHUNK) + 1) + ' failed — ' + e.message);
     }
   }
 }
