@@ -400,11 +400,27 @@ function colorTableHeadersOnSlides(presentation, newSlides, warnings) {
     try { newSlideIds[s.getObjectId()] = true; } catch (e) { /* skip */ }
   });
 
+  const restSlideCount = (restPres.slides || []).length;
+  const resolvedIdCount = Object.keys(newSlideIds).length;
+  console.log('Header coloring: ' + newSlides.length + ' new slides, ' +
+              resolvedIdCount + ' resolved IDs, ' + restSlideCount +
+              ' slides in REST response');
+  if (resolvedIdCount > 0) {
+    const sample = Object.keys(newSlideIds).slice(0, 2).join(', ');
+    console.log('  sample SlidesApp IDs: ' + sample);
+  }
+  if (restSlideCount > 0) {
+    const sample = (restPres.slides || []).slice(-2).map(s => s.objectId).join(', ');
+    console.log('  sample REST slide IDs (last 2): ' + sample);
+  }
+
   const requests = [];
   let tableCount = 0;
+  let matchedSlides = 0;
 
   (restPres.slides || []).forEach(restSlide => {
     if (!newSlideIds[restSlide.objectId]) return;
+    matchedSlides++;
 
     (restSlide.pageElements || []).forEach(el => {
       if (!el.table) return;
@@ -433,9 +449,9 @@ function colorTableHeadersOnSlides(presentation, newSlides, warnings) {
     });
   });
 
+  console.log('Header coloring: ' + matchedSlides + ' matched slides, ' +
+              tableCount + ' tables, ' + requests.length + ' cell updates');
   if (requests.length === 0) return;
-  console.log('Coloring ' + tableCount + ' table headers (' +
-              requests.length + ' cell updates) via REST-API IDs');
 
   const CHUNK = 50;
   for (let i = 0; i < requests.length; i += CHUNK) {
