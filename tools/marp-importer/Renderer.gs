@@ -27,15 +27,9 @@ const TABLE_CELL_FONT_SIZE_SMALL_PT = 10;
 // color if desired: rgb values are 0..1, not 0..255.
 const TABLE_HEADER_FILL_RGB = { red: 0.945, green: 0.953, blue: 0.961 };
 
-// Collected during rendering, flushed once at the end of renderSlides. This
-// dodges a race where Slides.Presentations.batchUpdate can't yet see tables
-// created via SlidesApp in the same synchronous step.
-let _pendingHeaderFills = [];
-
 // ---- Entry point ----
 
 function renderSlides(presentation, slides, layoutMap, warnings) {
-  _pendingHeaderFills = [];
   const created = [];
   slides.forEach((slide, i) => {
     const slideNum = i + 1;
@@ -62,7 +56,7 @@ function renderSlides(presentation, slides, layoutMap, warnings) {
     }
   });
 
-  flushPendingHeaderFills(presentation, warnings);
+  colorTableHeadersOnSlides(presentation, created, warnings);
   return created;
 }
 
@@ -360,56 +354,54 @@ function renderOneTable(gSlide, block, left, top, width, slideNum, tableIdx, war
     }
   }
 
-  // Queue header-fill for batched flush after all SlidesApp mutations are
-  // done. Calling batchUpdate here fails with "object not found" because
-  // the table just created via SlidesApp hasn't propagated to the REST API
-  // yet.
-  if (rowCount > 0 && colCount > 0) {
-    try {
-      _pendingHeaderFills.push({
-        tableId: table.getObjectId(),
-        colCount: colCount,
-        slideNum: slideNum,
-        tableIdx: tableIdx
-      });
-    } catch (e) {
-      warnings.push('Slide ' + slideNum + ' table ' + tableIdx +
-                    ': could not queue header fill — ' + e.message);
-    }
-  }
-
   let h = 0;
   try { h = table.getHeight() || 0; } catch (e) { /* non-fatal */ }
   return h;
 }
 
 /**
- * Apply all queued table-header background fills in one batchUpdate.
- * Called once at the end of renderSlides, after every table has been
- * inserted and the SlidesApp mutations have had a chance to commit.
+ * Color the header row (row 0) of every table on the given slides.
  *
- * Chunked to stay well under the Slides API's per-request limit.
+ * Rather than capturing table.getObjectId() during insertion (which can
+ * return a proxy ID the Slides REST API does not recognize yet), this
+ * walks the newly-created slides and reads each table's object ID at
+ * flush time. By then SlidesApp has committed its mutations and the IDs
+ * are valid server-side identifiers.
+ *
+ * A short sleep gives the backend extra time to propagate the inserts.
  */
-function flushPendingHeaderFills(presentation, warnings) {
-  if (_pendingHeaderFills.length === 0) return;
+function colorTableHeadersOnSlides(presentation, newSlides, warnings) {
+  if (!newSlides || newSlides.length === 0) return;
 
-  const presId = presentation.getId();
-
-  // Force SlidesApp mutations to commit server-side before the REST API
-  // batchUpdate runs. Two mechanisms combined:
-  //   1. A read of the presentation state (getSlides iterates the deck)
-  //   2. A short sleep. 2s is empirically enough for 60+ slide decks.
-  // Without this, batchUpdate fails with "object not found" because the
-  // tables just inserted via SlidesApp haven't propagated yet.
-  try { presentation.getSlides(); } catch (e) { /* non-fatal */ }
+  // Give SlidesApp time to commit server-side before we query via REST.
   Utilities.sleep(2000);
 
+  const tables = [];
+  newSlides.forEach(slide => {
+    try {
+      slide.getPageElements().forEach(el => {
+        if (el.getPageElementType() === SlidesApp.PageElementType.TABLE) {
+          tables.push(el.asTable());
+        }
+      });
+    } catch (e) { /* non-fatal per-slide */ }
+  });
+  if (tables.length === 0) return;
+
   const requests = [];
-  _pendingHeaderFills.forEach(fill => {
-    for (let c = 0; c < fill.colCount; c++) {
+  tables.forEach(table => {
+    let colCount = 0;
+    let tableId = null;
+    try {
+      colCount = table.getNumColumns();
+      tableId = table.getObjectId();
+    } catch (e) { /* skip this table */ }
+    if (!tableId || colCount <= 0) return;
+
+    for (let c = 0; c < colCount; c++) {
       requests.push({
         updateTableCellProperties: {
-          objectId: fill.tableId,
+          objectId: tableId,
           tableRange: {
             location: { rowIndex: 0, columnIndex: c },
             rowSpan: 1,
@@ -426,9 +418,11 @@ function flushPendingHeaderFills(presentation, warnings) {
     }
   });
 
-  console.log('Flushing ' + _pendingHeaderFills.length +
-              ' table header fills (' + requests.length + ' cell updates)');
+  if (requests.length === 0) return;
+  console.log('Coloring ' + tables.length + ' table headers (' +
+              requests.length + ' cell updates)');
 
+  const presId = presentation.getId();
   const CHUNK = 50;
   for (let i = 0; i < requests.length; i += CHUNK) {
     const chunk = requests.slice(i, i + CHUNK);
@@ -439,6 +433,4 @@ function flushPendingHeaderFills(presentation, warnings) {
                     ' failed — ' + e.message);
     }
   }
-
-  _pendingHeaderFills = [];
 }
