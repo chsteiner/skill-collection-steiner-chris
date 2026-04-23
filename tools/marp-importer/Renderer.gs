@@ -23,10 +23,6 @@ const TABLE_GAP_PT = 8;                // vertical gap between body and table / 
 const TABLE_CELL_FONT_SIZE_PT = 12;
 const TABLE_CELL_FONT_SIZE_SMALL_PT = 10;
 
-// Table header fill (Google neutral grey #f1f3f4). Change to DHCraft brand
-// color if desired: rgb values are 0..1, not 0..255.
-const TABLE_HEADER_FILL_RGB = { red: 0.945, green: 0.953, blue: 0.961 };
-
 // ---- Entry point ----
 
 function renderSlides(presentation, slides, layoutMap, warnings) {
@@ -56,7 +52,6 @@ function renderSlides(presentation, slides, layoutMap, warnings) {
     }
   });
 
-  colorTableHeadersOnSlides(presentation, created, warnings);
   return created;
 }
 
@@ -357,110 +352,4 @@ function renderOneTable(gSlide, block, left, top, width, slideNum, tableIdx, war
   let h = 0;
   try { h = table.getHeight() || 0; } catch (e) { /* non-fatal */ }
   return h;
-}
-
-/**
- * Color the header row (row 0) of every table on the newly-rendered
- * slides.
- *
- * Object IDs returned by SlidesApp for newly-created tables can be
- * temporary proxies that the Slides REST API does not yet recognize.
- * Instead:
- *   1. SlidesApp.flush() forces all pending mutations to commit server-side
- *   2. Slides.Presentations.get() returns canonical server-side IDs
- *   3. We match by SLIDE objectId (those match reliably between both APIs)
- *      and read the TABLE objectIds from the REST response
- *
- * That gives us IDs batchUpdate is guaranteed to accept.
- */
-function colorTableHeadersOnSlides(presentation, newSlides, warnings) {
-  if (!newSlides || newSlides.length === 0) return;
-
-  // 1. Commit pending SlidesApp mutations. flush() is not documented on
-  //    SlidesApp everywhere, so guard against runtime absence.
-  try {
-    if (typeof SlidesApp.flush === 'function') SlidesApp.flush();
-  } catch (e) { /* non-fatal */ }
-  Utilities.sleep(2000);
-
-  const presId = presentation.getId();
-  let restPres;
-  try {
-    restPres = Slides.Presentations.get(presId);
-  } catch (e) {
-    warnings.push('Could not fetch presentation via REST API for table ' +
-                  'header coloring — ' + e.message);
-    return;
-  }
-
-  // Slide object IDs are stable between SlidesApp and REST, so we can
-  // identify our new slides reliably.
-  const newSlideIds = {};
-  newSlides.forEach(s => {
-    try { newSlideIds[s.getObjectId()] = true; } catch (e) { /* skip */ }
-  });
-
-  const restSlideCount = (restPres.slides || []).length;
-  const resolvedIdCount = Object.keys(newSlideIds).length;
-  console.log('Header coloring: ' + newSlides.length + ' new slides, ' +
-              resolvedIdCount + ' resolved IDs, ' + restSlideCount +
-              ' slides in REST response');
-  if (resolvedIdCount > 0) {
-    const sample = Object.keys(newSlideIds).slice(0, 2).join(', ');
-    console.log('  sample SlidesApp IDs: ' + sample);
-  }
-  if (restSlideCount > 0) {
-    const sample = (restPres.slides || []).slice(-2).map(s => s.objectId).join(', ');
-    console.log('  sample REST slide IDs (last 2): ' + sample);
-  }
-
-  const requests = [];
-  let tableCount = 0;
-  let matchedSlides = 0;
-
-  (restPres.slides || []).forEach(restSlide => {
-    if (!newSlideIds[restSlide.objectId]) return;
-    matchedSlides++;
-
-    (restSlide.pageElements || []).forEach(el => {
-      if (!el.table) return;
-      tableCount++;
-      const tableId = el.objectId;
-      const colCount = el.table.columns;
-
-      for (let c = 0; c < colCount; c++) {
-        requests.push({
-          updateTableCellProperties: {
-            objectId: tableId,
-            tableRange: {
-              location: { rowIndex: 0, columnIndex: c },
-              rowSpan: 1,
-              columnSpan: 1
-            },
-            tableCellProperties: {
-              tableCellBackgroundFill: {
-                solidFill: { color: { rgbColor: TABLE_HEADER_FILL_RGB } }
-              }
-            },
-            fields: 'tableCellBackgroundFill.solidFill.color'
-          }
-        });
-      }
-    });
-  });
-
-  console.log('Header coloring: ' + matchedSlides + ' matched slides, ' +
-              tableCount + ' tables, ' + requests.length + ' cell updates');
-  if (requests.length === 0) return;
-
-  const CHUNK = 50;
-  for (let i = 0; i < requests.length; i += CHUNK) {
-    const chunk = requests.slice(i, i + CHUNK);
-    try {
-      Slides.Presentations.batchUpdate({ requests: chunk }, presId);
-    } catch (e) {
-      warnings.push('Table header fill chunk ' +
-                    (Math.floor(i / CHUNK) + 1) + ' failed — ' + e.message);
-    }
-  }
 }

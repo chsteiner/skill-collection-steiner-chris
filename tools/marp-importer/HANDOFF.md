@@ -77,8 +77,15 @@ Dropped: images, `<div class="warn">`, Marp directives (header/footer/pause/clos
 1. **Italic regex harden** `[correctness, ~5 min]` — **DONE (2026-04-21)**
    Word-boundary lookbehind/lookahead guards around `_..._` and `*...*` italic patterns in `parseInline` (Parser.gs). Also applied to `__bold__` for consistency. Regression test: `test-italic.mjs`, run with `node tools/marp-importer/test-italic.mjs`.
 
-2. **Table header background color** `[visual polish, medium]`
-   Currently only bold. Add light grey (`#f1f3f4`) or DHCraft color fill for header row. Requires Advanced Slides Service `batchUpdate` with `updateTableCellProperties.tableCellBackgroundFill`. Modify `renderOneTable` in Renderer.gs.
+2. **Table header background color** `[visual polish, medium]` — **ATTEMPTED, NOT WORKING (2026-04-23)**
+   Tried `updateTableCellProperties.tableCellBackgroundFill` via Advanced Slides Service batchUpdate. Several approaches failed:
+   - Direct call right after `table.getObjectId()`: "object not found" (proxy IDs don't match REST namespace)
+   - Deferred batch at end of renderSlides with 2s sleep: same error
+   - Re-reading table IDs via `slide.getPageElements()`: same error
+   - `Slides.Presentations.get()` to fetch REST IDs + `SlidesApp.flush()` + 2s sleep + match by slide objectId: no error but silently colors 0 tables (slide IDs apparently don't match either, or the REST response lags behind the SlidesApp inserts even after flush)
+   - Root cause: Apps Script's SlidesApp and the Slides REST API use different object ID namespaces for recently-created objects, and the documented `SlidesApp.flush()` does not bridge the gap reliably within a single execution.
+   - Accepted state: headers get `setBold(true)` on row 0 in `renderOneTable` (Phase 4 behavior), no fill. Users OK with bold-only.
+   - Proper fix would require rendering tables themselves via `batchUpdate` (createTable + insertText + updateTableCellProperties in one atomic request), which is a large refactor.
 
 3. **Verify nested bullets** `[verification only, cheap]`
    Build test deck with 3-level nesting. Check if marker cycles or just indents. If broken, switch to `createParagraphBullets` + `nestingLevel` via batchUpdate.
@@ -110,7 +117,7 @@ Dropped: images, `<div class="warn">`, Marp directives (header/footer/pause/clos
 
 ## Next Action
 
-Item 1 done. Next up is item 2 (table header background) for the biggest visual-polish win, or item 3 (verify nested bullets) if a test deck with 3-level nesting is available.
+Items 1 and 2 closed (item 2 accepted as bold-only). Next up is item 4 (code block background) or item 3 (nested bullets verification) when a test deck with 3-level nesting is available.
 
 ## Dev Workflow
 
