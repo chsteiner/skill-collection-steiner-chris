@@ -88,10 +88,10 @@ Dropped: images, `<div class="warn">`, Marp directives (header/footer/pause/clos
    - Proper fix would require rendering tables themselves via `batchUpdate` (createTable + insertText + updateTableCellProperties in one atomic request), which is a large refactor.
 
 3. **Verify nested bullets** `[verification only, cheap]`
-   Build test deck with 3-level nesting. Check if marker cycles or just indents. If broken, switch to `createParagraphBullets` + `nestingLevel` via batchUpdate.
+   Build test deck with 3-level nesting. Check if marker cycles or just indents. Try calling `applyListPreset` explicitly AFTER `applyIndentForLevel` — the order may fix marker rotation without needing a REST refactor. If still broken, switch to `createParagraphBullets` + `nestingLevel` via batchUpdate.
 
 4. **Code block background** `[visual polish, medium]`
-   Grey box behind code-block paragraphs. Either shape fill or paragraph-level background.
+   Grey box behind code-block paragraphs. Warning: `range.getTextStyle().setBackgroundColor(hex)` behaves as a text highlighter, not a block background — no padding, line breaks stay white. If the highlight look is unacceptable, the only alternative is drawing a separate `Shape` rectangle behind the text block with computed geometry, which is expensive. Try highlight first; if ugly, de-prioritize.
 
 5. **Text + table dynamic split** `[refinement, medium]`
    Replace fixed 40% heuristic with estimate from paragraph char-count × font-size.
