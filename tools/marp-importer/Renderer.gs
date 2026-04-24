@@ -286,7 +286,27 @@ function applySegmentFormatting(text, seg) {
 
   if (seg.runs) {
     applyInlineRuns(text, seg.start, seg.runs);
+    // Blockquote + bold interaction: the base-italic set on the whole
+    // blockquote range above fights bold runs inside the quotation, so
+    // `> **emphasis** here` ends up bold-italic and the emphasis loses
+    // its visual distinction. Clear italic on runs that are bold-only
+    // (bold without an explicit italic flag from the author).
+    if (kind === 'blockquote') {
+      clearItalicOnBoldOnlyRuns(text, seg.start, seg.runs);
+    }
   }
+}
+
+function clearItalicOnBoldOnlyRuns(text, offset, runs) {
+  let pos = offset;
+  runs.forEach(run => {
+    const runEnd = pos + (run.text || '').length;
+    if (run.bold && !run.italic && runEnd > pos) {
+      const range = text.getRange(pos, runEnd);
+      if (range) range.getTextStyle().setItalic(false);
+    }
+    pos = runEnd;
+  });
 }
 
 function applyIndentForLevel(range, level) {

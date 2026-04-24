@@ -103,6 +103,15 @@ function splitSlides(text) {
 function parseSlide(text, slideNum, warnings) {
   const slide = { type: null, notes: '' };
 
+  // Skill convention: prefer en-dash (–) over em-dash (—). Warn once per slide,
+  // ignoring em-dashes inside code fences and inline code (where they may be
+  // literal content, e.g., code comments, regex ranges).
+  const emDashCount = countEmDashesOutsideCode(text);
+  if (emDashCount > 0) {
+    warnings.push('Slide ' + slideNum + ': em-dash (—) found ' + emDashCount +
+                  'x; skill convention prefers en-dash (–) with spaces');
+  }
+
   // Extract notes (multi-line tolerant). Keep only the first one if multiple.
   const notesMatches = [...text.matchAll(/<!--\s*notes:([\s\S]*?)-->/g)];
   if (notesMatches.length > 0) {
@@ -145,6 +154,19 @@ function parseSlide(text, slideNum, warnings) {
     case 'twocolumn': return parseTwoColumnSlide(text, slide, slideNum, warnings);
     default:          return slide;
   }
+}
+
+/**
+ * Count em-dashes in prose, excluding fenced code blocks and inline code.
+ * Used for the skill-convention warning; em-dashes inside code can be
+ * legitimate literal content (string comparisons, regex ranges, comments).
+ */
+function countEmDashesOutsideCode(text) {
+  const stripped = text
+    .replace(/```[\s\S]*?```/g, '')
+    .replace(/`[^`\n]*`/g, '');
+  const matches = stripped.match(/—/g);
+  return matches ? matches.length : 0;
 }
 
 /**
@@ -564,15 +586,29 @@ function parseNumberedList(lines, start, small) {
  * Run shape: { text, bold?, italic?, code?, link? }
  *
  * Handles: ***bold italic***, **bold**, __bold__, `code`, [text](url),
- *          *italic*, _italic_
+ *          *italic*, _italic_ — and combinations by recursive descent.
+ *
+ * Nested formatting is resolved by recursing into the captured content of
+ * each outer match and merging the outer "parent" flags onto each inner
+ * run. Examples:
+ *   - **[Ollama](url)**       → run { text: 'Ollama', bold, link: url }
+ *   - [**Ollama**](url)       → run { text: 'Ollama', bold, link: url }
+ *   - *a **b** c*             → runs a (italic), b (italic+bold), c (italic)
+ * Without the recursion, bold was a leaf and the link inside **[...](url)**
+ * was emitted as literal markdown text.
  *
  * Underscore-delimited patterns (__bold__, _italic_) use word-boundary
  * guards so identifiers like `project_id` and `source_of_truth` are NOT
  * treated as emphasis in prose. Asterisk patterns likewise protect *italic*
  * from being matched inside word runs.
+ *
+ * Inline code is a LEAF — the regex already excludes backticks from the
+ * captured body, and nesting formatting inside a code span is not standard
+ * Markdown. Links, by contrast, do recurse: [**bold text**](url) is valid.
  */
-function parseInline(text) {
+function parseInline(text, parentFlags) {
   if (!text) return [];
+  parentFlags = parentFlags || {};
 
   const runs = [];
   // Alternatives in order of precedence. First match wins at each position.
@@ -591,22 +627,44 @@ function parseInline(text) {
   let m;
   while ((m = pattern.exec(text)) !== null) {
     if (m.index > lastEnd) {
-      runs.push({ text: text.slice(lastEnd, m.index) });
+      runs.push(withParentFlags({ text: text.slice(lastEnd, m.index) }, parentFlags));
     }
-    if (m[1])       runs.push({ text: m[2], bold: true, italic: true });
-    else if (m[3])  runs.push({ text: m[4], bold: true });
-    else if (m[5])  runs.push({ text: m[6], bold: true });
-    else if (m[7])  runs.push({ text: m[8], code: true });
-    else if (m[9])  runs.push({ text: m[10], link: m[11] });
-    else if (m[12]) runs.push({ text: m[13], italic: true });
-    else if (m[14]) runs.push({ text: m[15], italic: true });
+    if (m[1])       pushRuns(runs, parseInline(m[2],  mergeFlags(parentFlags, { bold: true, italic: true })));
+    else if (m[3])  pushRuns(runs, parseInline(m[4],  mergeFlags(parentFlags, { bold: true })));
+    else if (m[5])  pushRuns(runs, parseInline(m[6],  mergeFlags(parentFlags, { bold: true })));
+    else if (m[7])  runs.push(withParentFlags({ text: m[8],  code: true },        parentFlags));
+    else if (m[9])  pushRuns(runs, parseInline(m[10], mergeFlags(parentFlags, { link: m[11] })));
+    else if (m[12]) pushRuns(runs, parseInline(m[13], mergeFlags(parentFlags, { italic: true })));
+    else if (m[14]) pushRuns(runs, parseInline(m[15], mergeFlags(parentFlags, { italic: true })));
     lastEnd = m.index + m[0].length;
   }
   if (lastEnd < text.length) {
-    runs.push({ text: text.slice(lastEnd) });
+    runs.push(withParentFlags({ text: text.slice(lastEnd) }, parentFlags));
   }
   if (runs.length === 0) {
-    runs.push({ text: text });
+    runs.push(withParentFlags({ text: text }, parentFlags));
   }
   return runs;
+}
+
+function pushRuns(target, runs) {
+  for (let i = 0; i < runs.length; i++) target.push(runs[i]);
+}
+
+function mergeFlags(parent, add) {
+  const merged = {};
+  if (parent.bold   || add.bold)   merged.bold = true;
+  if (parent.italic || add.italic) merged.italic = true;
+  if (parent.code   || add.code)   merged.code = true;
+  if (add.link)                    merged.link = add.link;
+  else if (parent.link)            merged.link = parent.link;
+  return merged;
+}
+
+function withParentFlags(run, parentFlags) {
+  if (parentFlags.bold)   run.bold = true;
+  if (parentFlags.italic) run.italic = true;
+  if (parentFlags.code)   run.code = true;
+  if (parentFlags.link)   run.link = parentFlags.link;
+  return run;
 }
