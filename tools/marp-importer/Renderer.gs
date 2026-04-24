@@ -40,12 +40,33 @@ const IMAGE_DEFAULT_ASPECT = 0.6;  // fallback if native dimensions unavailable
 
 // ---- Entry point ----
 
+/**
+ * Render all parsed slides at the end of the presentation.
+ *
+ * Returns { created, attempted } — two arrays of Slide objects:
+ *
+ *   attempted  Every slide that was physically appended to the deck,
+ *              including ones whose fill step threw. The caller needs
+ *              this list to clean up leftover half-rendered slides when
+ *              the transaction as a whole is rejected.
+ *   created    Only the slides that filled without throwing. Used to
+ *              decide whether the transaction succeeded.
+ *
+ * Separating these two lists is what makes the import transactional:
+ * on partial failure, the caller removes everything in `attempted` so
+ * the presentation is restored to its pre-import state, rather than
+ * leaving the user with a mix of half-rendered new slides and deleted
+ * old ones.
+ */
 function renderSlides(presentation, slides, layoutMap, warnings) {
   const created = [];
+  const attempted = [];
   slides.forEach((slide, i) => {
     const slideNum = i + 1;
+    let gSlide = null;
     try {
-      const gSlide = appendSlideWithLayout(presentation, slide.type, layoutMap);
+      gSlide = appendSlideWithLayout(presentation, slide.type, layoutMap);
+      attempted.push(gSlide);
 
       if (slide.type === 'title') {
         fillTitleSlide(gSlide, slide, slideNum, warnings);
@@ -64,10 +85,11 @@ function renderSlides(presentation, slides, layoutMap, warnings) {
       created.push(gSlide);
     } catch (e) {
       warnings.push('Slide ' + slideNum + ' (' + slide.type + '): render error — ' + e.message);
+      // gSlide (if any) stays in `attempted` so the caller can roll it back.
     }
   });
 
-  return created;
+  return { created: created, attempted: attempted };
 }
 
 function appendSlideWithLayout(presentation, type, layoutMap) {

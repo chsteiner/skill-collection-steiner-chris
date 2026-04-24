@@ -121,7 +121,7 @@
   <div id="status"></div>
 
   <div class="actions">
-    <button onclick="google.script.host.close()">Cancel</button>
+    <button id="cancel-btn" onclick="google.script.host.close()">Cancel</button>
     <button id="import-btn" class="primary" onclick="runImport()" disabled>Import</button>
   </div>
 
@@ -149,6 +149,12 @@
     });
 
     function handleFile(file) {
+      // Always clear previous selection first — if the user picks a bad
+      // file after a good one, we don't want the old fileData lingering
+      // behind an error message; otherwise they could unknowingly import
+      // the previous file by clicking Import.
+      clearSelectedFile();
+
       if (!/\.(md|markdown)$/i.test(file.name)) {
         setStatus('Please pick an .md or .markdown file.', 'error');
         return;
@@ -160,8 +166,19 @@
         document.getElementById('import-btn').disabled = false;
         setStatus('', '');
       };
-      reader.onerror = () => setStatus('Failed to read file.', 'error');
+      reader.onerror = () => {
+        clearSelectedFile();
+        setStatus('Failed to read file.', 'error');
+      };
       reader.readAsText(file, 'UTF-8');
+    }
+
+    function clearSelectedFile() {
+      fileData = null;
+      document.getElementById('import-btn').disabled = true;
+      document.getElementById('file-info').classList.remove('visible');
+      document.getElementById('file-name').textContent = '';
+      document.getElementById('file-size').textContent = '';
     }
 
     function showFileInfo(name, size) {
@@ -178,13 +195,13 @@
 
     function runImport() {
       if (!fileData) return;
-      document.getElementById('import-btn').disabled = true;
+      setBusy(true);
       setStatus('Checking presentation…', '');
       google.script.run
         .withSuccessHandler(onPreFlight)
         .withFailureHandler(err => {
           setStatus('Error: ' + err.message, 'error');
-          document.getElementById('import-btn').disabled = false;
+          setBusy(false);
         })
         .getExistingSlideCount();
     }
@@ -201,7 +218,7 @@
         );
         if (!ok) {
           setStatus('Cancelled. No slides were changed.', '');
-          document.getElementById('import-btn').disabled = false;
+          setBusy(false);
           return;
         }
       }
@@ -214,7 +231,7 @@
         .withSuccessHandler(onImported)
         .withFailureHandler(err => {
           setStatus('Error: ' + err.message, 'error');
-          document.getElementById('import-btn').disabled = false;
+          setBusy(false);
         })
         .importFile(fileData);
     }
@@ -226,13 +243,29 @@
         msg += '\n' + result.warnings + ' warning(s). See Executions → Logs.';
       }
       setStatus(msg, cls);
-      document.getElementById('import-btn').disabled = false;
+      setBusy(false);
 
       // Auto-close if rendering succeeded and nothing needs attention.
       // With warnings, stay open so the user can read them before closing.
       if (result.rendered > 0 && result.warnings === 0) {
         setTimeout(() => google.script.host.close(), 1200);
       }
+    }
+
+    /**
+     * Toggle the dialog's busy state. When busy, the Import button is
+     * disabled and the Cancel button is relabelled "Close" — because
+     * the server-side import can't actually be cancelled once it's
+     * running, closing the dialog would only hide the progress.
+     */
+    function setBusy(busy) {
+      const importBtn = document.getElementById('import-btn');
+      const cancelBtn = document.getElementById('cancel-btn');
+      importBtn.disabled = busy;
+      cancelBtn.textContent = busy ? 'Close' : 'Cancel';
+      cancelBtn.title = busy
+        ? 'Closes the dialog. The import continues on the server.'
+        : '';
     }
 
     function setStatus(msg, cls) {

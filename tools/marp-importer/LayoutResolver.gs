@@ -81,6 +81,41 @@ function getLayoutDisplayNames(presentation, warnings) {
 }
 
 /**
+ * Throw if the template is missing any layout that the parsed slides
+ * actually need. Called from importFile BEFORE rendering starts so we
+ * never reach the "delete old slides" step with a BLANK-fallback deck.
+ *
+ * The previous behaviour was lenient: missing layouts produced a warning
+ * and the renderer fell back to PredefinedLayout.BLANK. But BLANK has no
+ * Title/Body placeholders, so every slide came out empty — and the
+ * transaction still completed, wiping the user's old slides in exchange
+ * for an empty presentation. This check upgrades that silent failure to
+ * a loud abort.
+ *
+ * @param {Object<string, GoogleAppsScript.Slides.Layout|null>} layoutMap
+ * @param {object[]} slides  parsed slide objects (we look at slide.type)
+ * @throws {Error} if any slide's required layout is missing
+ */
+function assertRequiredLayouts(layoutMap, slides) {
+  const usedTypes = {};
+  slides.forEach(s => { if (s.type) usedTypes[s.type] = true; });
+
+  const missing = [];
+  Object.keys(usedTypes).forEach(type => {
+    if (!layoutMap[type]) missing.push(LAYOUT_NAMES[type] || type);
+  });
+
+  if (missing.length > 0) {
+    throw new Error(
+      'Template is missing required layout(s): ' + missing.join(', ') +
+      '. Import aborted; presentation unchanged. ' +
+      'Run "Marp Import → Verify layouts" to diagnose, then add the ' +
+      'missing layout(s) to the template and retry.'
+    );
+  }
+}
+
+/**
  * Menu helper: print all layout names in the template to the log,
  * so you can verify the setup before running an import.
  */
