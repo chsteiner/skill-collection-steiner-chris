@@ -165,6 +165,8 @@ Empty slide, to be designed manually in Google Slides after import. No further c
 - `[link text](https://url)` → clickable link
 - `` `inline code` `` → monospace
 
+**Nesting limit.** Bold-inside-italic (`*foo **bar** baz*`) and italic-inside-bold (`**foo *bar* baz**`) don't render — the importer's inline parser is regex-based and the inner markers get swallowed by the outer delimiters. Write adjacent runs instead: `*foo* **bar** *baz*`. Links-inside-bold and bold-inside-links (`**[x](url)**`, `[**x**](url)`) *do* work — those paths are specifically handled by the recursive branch of the parser. When normalizing an external deck, flatten any nested emphasis you find; dropping the outer layer is usually the lowest-cost rewrite.
+
 ## Small text
 
 For citations, source notes, fine print, figure captions. Renders as smaller paragraph at the bottom of the body.
