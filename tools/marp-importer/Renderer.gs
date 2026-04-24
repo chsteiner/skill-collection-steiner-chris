@@ -216,19 +216,35 @@ function renderBodyArea(gSlide, bodyShape, blocks, slideNum, warnings) {
   // Text-after only: visuals at body's top, body placeholder moves below
   // and holds textAfter. Reserving just enough vertical space for the
   // expected text length lets the image use most of the slide.
+  //
+  // Position strategy differs by visual kind:
+  //   - Image-only stacks: trust the dynamic cursor. renderOneImage sets
+  //     height explicitly, so the returned cursor is accurate and the
+  //     text-after sits snug below the image.
+  //   - Stacks containing a table: use the reserved budget as a fixed
+  //     position. Table.getHeight() returns pre-layout dimensions in the
+  //     same execution as insertTable, so the dynamic cursor under-
+  //     advances and the body placeholder ends up inside the table.
+  //     Fixed-budget accepts a cosmetic gap below short tables in
+  //     exchange for never colliding.
   if (textBefore.length === 0 && textAfter.length > 0) {
     const reserved = estimateTextHeight(textAfter);
     const textAfterHeight = Math.min(reserved, height * 0.35);
     const visualsHeight   = height - textAfterHeight - TABLE_GAP_PT;
-    const afterVisualsTop = stackVisualsAt(gSlide, visuals, left, top, width,
+    const dynamicCursor   = stackVisualsAt(gSlide, visuals, left, top, width,
                                            visualsHeight, slideNum, warnings);
-    try { bodyShape.setTop(afterVisualsTop); }                          catch (e) { /* non-fatal */ }
-    try { bodyShape.setHeight((top + height) - afterVisualsTop); }      catch (e) { /* non-fatal */ }
+    const textAfterTop = containsTable(visuals)
+      ? (top + visualsHeight + TABLE_GAP_PT)
+      : dynamicCursor;
+    try { bodyShape.setTop(textAfterTop); }                          catch (e) { /* non-fatal */ }
+    try { bodyShape.setHeight((top + height) - textAfterTop); }      catch (e) { /* non-fatal */ }
     renderBlocksIntoShape(bodyShape, textAfter, slideNum, warnings);
     return;
   }
 
   // Text both sides: body holds textBefore; textAfter into an aux TextBox.
+  // Same fixed-vs-dynamic split as above — tables use the reservation,
+  // images use the actual cursor.
   const textBeforeHeight = height * 0.3;
   const textAfterHeight  = Math.min(estimateTextHeight(textAfter), height * 0.25);
   const visualsHeight    = height - textBeforeHeight - textAfterHeight - 2 * TABLE_GAP_PT;
@@ -236,16 +252,19 @@ function renderBodyArea(gSlide, bodyShape, blocks, slideNum, warnings) {
   try { bodyShape.setHeight(textBeforeHeight); } catch (e) { /* non-fatal */ }
   renderBlocksIntoShape(bodyShape, textBefore, slideNum, warnings);
 
-  const visualsTop      = top + textBeforeHeight + TABLE_GAP_PT;
-  const afterVisualsTop = stackVisualsAt(gSlide, visuals, left, visualsTop, width,
-                                         visualsHeight, slideNum, warnings);
+  const visualsTop    = top + textBeforeHeight + TABLE_GAP_PT;
+  const dynamicCursor = stackVisualsAt(gSlide, visuals, left, visualsTop, width,
+                                       visualsHeight, slideNum, warnings);
+  const textAfterTop = containsTable(visuals)
+    ? (visualsTop + visualsHeight + TABLE_GAP_PT)
+    : dynamicCursor;
 
-  const auxHeight = (top + height) - afterVisualsTop;
+  const auxHeight = (top + height) - textAfterTop;
   if (auxHeight > 10) {
     try {
       const auxBox = gSlide.insertTextBox('');
       auxBox.setLeft(left);
-      auxBox.setTop(afterVisualsTop);
+      auxBox.setTop(textAfterTop);
       auxBox.setWidth(width);
       auxBox.setHeight(auxHeight);
       renderBlocksIntoShape(auxBox, textAfter, slideNum, warnings);
@@ -256,6 +275,11 @@ function renderBodyArea(gSlide, bodyShape, blocks, slideNum, warnings) {
     warnings.push('Slide ' + slideNum + ': no room for text-after-visuals; ' +
                   textAfter.length + ' block(s) dropped');
   }
+}
+
+function containsTable(visuals) {
+  for (const v of visuals) if (v.kind === 'table') return true;
+  return false;
 }
 
 /**
