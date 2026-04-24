@@ -6,9 +6,12 @@
  * meldet jede Folie, deren Content ueber den Canvas hinausragt.
  *
  * Voraussetzungen:
- *   npm install -g playwright
- *   npx playwright install chromium
- *   marp-cli muss im PATH sein
+ *   marp-cli im PATH  (npm install -g @marp-team/marp-cli)
+ *   playwright        (npm install -D playwright  OR  npm install -g playwright)
+ *   chromium          (npx playwright install chromium)
+ *
+ * Security: only run this on trusted decks. The script renders with
+ * `--allow-local-files`, so a deck can reference arbitrary local paths.
  *
  * Aufruf (aus Repo-Root):
  *   node skills/marp-slides/scripts/check-slide-overflow.mjs deck.md
@@ -17,6 +20,7 @@
 import { spawnSync } from "node:child_process";
 import { rmSync, existsSync } from "node:fs";
 import { join, basename, dirname, resolve } from "node:path";
+import { pathToFileURL } from "node:url";
 import { createRequire } from "node:module";
 
 const require = createRequire(import.meta.url);
@@ -42,11 +46,13 @@ async function main() {
   }
 
   // Render alongside the source so relative image paths resolve normally.
+  // PID suffix avoids collisions when two runs race on the same deck.
   // Dot-prefixed filename keeps it out of `ls`; cleaned up after the run.
   const deckDir = dirname(deckPath);
   const htmlPath = join(
     deckDir,
-    "." + basename(deckPath).replace(/\.md$/i, "") + ".overflow-check.html",
+    "." + basename(deckPath).replace(/\.md$/i, "") +
+      "." + process.pid + ".overflow-check.html",
   );
 
   const marpBin = process.platform === "win32" ? "marp.cmd" : "marp";
@@ -55,6 +61,12 @@ async function main() {
     ["--html", "--allow-local-files", "-o", htmlPath, deckPath],
     { stdio: ["ignore", "pipe", "pipe"], shell: process.platform === "win32" }
   );
+  if (render.error) {
+    console.error(`Failed to run ${marpBin}: ${render.error.message}`);
+    console.error("Is marp-cli installed and on PATH? (npm install -g @marp-team/marp-cli)");
+    rmSync(htmlPath, { force: true });
+    process.exit(2);
+  }
   if (render.status !== 0) {
     console.error("marp render fehlgeschlagen:");
     console.error(render.stderr?.toString() || render.stdout?.toString());
@@ -62,23 +74,41 @@ async function main() {
     process.exit(2);
   }
 
-  const browser = await chromium.launch();
-  // Marp sections render at 1280x720. Match viewport so CSS dimensions,
-  // pixel density, and text wrapping behave like the PDF export.
-  const page = await browser.newPage({
-    viewport: { width: 1280, height: 720 },
-  });
-  await page.goto("file://" + htmlPath.replace(/\\/g, "/"));
-  await page.waitForLoadState("networkidle");
-  // Force each section out of Marp's centered/hidden flex state so we can
-  // measure actual child positions. Without this, overflow:hidden + flex
-  // place-content:center can silently clip content of any element type —
-  // scrollHeight stays equal to clientHeight even when content runs over.
-  await page.addStyleTag({
-    content: "section{display:block!important;overflow:visible!important;}",
-  });
+  let browser;
+  let results;
+  try {
+    browser = await chromium.launch();
+    // Marp sections render at 1280x720. Match viewport so CSS dimensions,
+    // pixel density, and text wrapping behave like the PDF export.
+    const page = await browser.newPage({
+      viewport: { width: 1280, height: 720 },
+    });
+    await page.goto(pathToFileURL(htmlPath).href);
+    await page.waitForLoadState("networkidle");
+    // networkidle alone isn't enough for stable measurement: text reflows
+    // when the real font finishes loading, and images can shift layout
+    // when decoded. Wait for both explicitly.
+    await page.evaluate(async () => {
+      if (document.fonts && document.fonts.ready) await document.fonts.ready;
+      await Promise.all(
+        Array.from(document.images).map((img) =>
+          img.complete
+            ? Promise.resolve()
+            : new Promise((resolve) => {
+                img.onload = img.onerror = resolve;
+              }),
+        ),
+      );
+    });
+    // Force each section out of Marp's centered/hidden flex state so we can
+    // measure actual child positions. Without this, overflow:hidden + flex
+    // place-content:center can silently clip content of any element type —
+    // scrollHeight stays equal to clientHeight even when content runs over.
+    await page.addStyleTag({
+      content: "section{display:block!important;overflow:visible!important;}",
+    });
 
-  const results = await page.evaluate((tol) => {
+    results = await page.evaluate((tol) => {
     const sections = Array.from(document.querySelectorAll("section"));
     return sections.map((s, i) => {
       const h1 = s.querySelector("h1, h2");
@@ -147,10 +177,11 @@ async function main() {
         overflows: overflow > tol || imgNaturalOverflow,
       };
     });
-  }, TOLERANCE_PX);
-
-  await browser.close();
-  rmSync(htmlPath, { force: true });
+    }, TOLERANCE_PX);
+  } finally {
+    if (browser) await browser.close().catch(() => {});
+    rmSync(htmlPath, { force: true });
+  }
 
   const flagged = results.filter((r) => r.overflows);
 
