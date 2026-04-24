@@ -354,9 +354,17 @@ After these seven passes, run the overflow check (`scripts/check-slide-overflow.
 
 ## QA: overflow check
 
-After writing a deck, verify that no slide exceeds its canvas. `scripts/check-slide-overflow.mjs` renders the deck with `marp-cli`, loads it in headless Chromium via Playwright, and measures `scrollHeight` vs `clientHeight` per `<section>`. It reports every slide whose content overflows — the kind of failure you can't see in the markdown but that shows up as clipped text in the Google Slides import or the Marp HTML preview.
+After writing a deck, verify that no slide exceeds its canvas. `scripts/check-slide-overflow.mjs` renders the deck with `marp-cli`, loads it in headless Chromium via Playwright, and checks each `<section>` for any visible descendant that overflows the content box — in any direction (top / right / bottom / left). This catches the failure modes you can't see in the markdown: clipped text, wide tables, images scaled past the canvas.
 
-Requirements: `marp-cli` in PATH, `npm install -g playwright`, `npx playwright install chromium`.
+Requirements:
+
+- `marp-cli` in PATH: `npm install -g @marp-team/marp-cli`
+- `playwright` reachable by Node: either project-local (preferred, reproducible) or global.
+  - Project-local: `npm install -D playwright` at the repo root.
+  - Global: `npm install -g playwright`.
+- Chromium browser: `npx playwright install chromium` (run once).
+
+**Security:** the script renders with `--allow-local-files`, so a deck can reference arbitrary local paths during rendering. Only run it on trusted decks.
 
 Run from repo root:
 
@@ -364,7 +372,7 @@ Run from repo root:
 node skills/marp-slides/scripts/check-slide-overflow.mjs path/to/deck.md
 ```
 
-Exit code 3 if any slide overflows; otherwise 0. Typical culprits: too many bullets, tables that ran over, a section with more than one heading level accidentally turning into a content slide.
+Exit code 3 if any slide overflows; otherwise 0. Output per flagged slide tags the offending direction(s): `[bottom+24]` means a descendant extended 24px below the content box; `[right+80, bottom+12]` means both horizontal and vertical overflow. Typical culprits: too many bullets, tables wider than the slide, a code block that didn't get wrapped, an image scaled past its container.
 
 ## Troubleshooting
 

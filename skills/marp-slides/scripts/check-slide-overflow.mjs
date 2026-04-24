@@ -24,12 +24,36 @@ import { pathToFileURL } from "node:url";
 import { createRequire } from "node:module";
 
 const require = createRequire(import.meta.url);
-const npmRoot = spawnSync(
-  process.platform === "win32" ? "npm.cmd" : "npm",
-  ["root", "-g"],
-  { encoding: "utf8", shell: process.platform === "win32" }
-).stdout.trim();
-const { chromium } = require(join(npmRoot, "playwright"));
+
+// Resolve playwright with a local-first strategy:
+//   1. Normal require() — picks up a project-local install (npm/pnpm/yarn/bun
+//      all put it in node_modules). This is the preferred setup: reproducible
+//      per project, version-pinned via package.json.
+//   2. Fallback: query the global npm root and require from there. Keeps the
+//      script working for users on the old `npm install -g playwright` path.
+//   3. Otherwise: print a clear install hint and exit.
+let chromium;
+try {
+  chromium = require("playwright").chromium;
+} catch {
+  try {
+    const globalNpmRoot = spawnSync(
+      process.platform === "win32" ? "npm.cmd" : "npm",
+      ["root", "-g"],
+      { encoding: "utf8", shell: process.platform === "win32" }
+    ).stdout.trim();
+    if (!globalNpmRoot) throw new Error("npm root -g returned no path");
+    chromium = require(join(globalNpmRoot, "playwright")).chromium;
+  } catch {
+    console.error(
+      "Could not resolve 'playwright'. Install it either way:\n" +
+      "  (preferred) npm install -D playwright\n" +
+      "  (fallback)  npm install -g playwright\n" +
+      "Then once:  npx playwright install chromium"
+    );
+    process.exit(1);
+  }
+}
 
 const TOLERANCE_PX = 2;
 
