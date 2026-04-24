@@ -261,6 +261,20 @@ def build_context(project, query):
 <!-- _class: blank -->
 ```
 
+## QA: overflow check
+
+After writing a deck, verify that no slide exceeds its canvas. `scripts/check-slide-overflow.mjs` renders the deck with `marp-cli`, loads it in headless Chromium via Playwright, and measures `scrollHeight` vs `clientHeight` per `<section>`. It reports every slide whose content overflows — the kind of failure you can't see in the markdown but that shows up as clipped text in the Google Slides import or the Marp HTML preview.
+
+Requirements: `marp-cli` in PATH, `npm install -g playwright`, `npx playwright install chromium`.
+
+Run from repo root:
+
+```bash
+node skills/marp-slides/scripts/check-slide-overflow.mjs path/to/deck.md
+```
+
+Exit code 3 if any slide overflows; otherwise 0. Typical culprits: too many bullets, tables that ran over, a section with more than one heading level accidentally turning into a content slide.
+
 ## Troubleshooting
 
 - **Title slide loses author line**: `### H3` missing, or the second Subtitle placeholder in `dh-title` doesn't exist in this specific template. Check the template.
