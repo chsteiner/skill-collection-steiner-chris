@@ -42,13 +42,28 @@ npx skills add . -g --agent "*" --skill <skill-name> -y
 npx skills add . -g --agent "*" --all
 ```
 
-**Important:** use `--agent "*"`, not `--agent claude-code`. Single-agent installs bypass the central `~/.agents/skills/` store and **copy** the skill instead of symlinking — then repo edits don't propagate. Multi-agent installs symlink from `~/.claude/skills/<name>` → `~/.agents/skills/<name>`.
+**Important:** use `--agent "*"`, not `--agent claude-code`. Single-agent installs bypass the central `~/.agents/skills/` store. Multi-agent installs place the skill in `~/.agents/skills/<name>/` and symlink `~/.claude/skills/<name>` → `~/.agents/skills/<name>`.
 
-### Update
+### Repo edits don't propagate — re-install after every change
+
+`npx skills add` **copies** the skill from the repo into `~/.agents/skills/<name>/`. The symlink is only between `~/.claude/skills/` and `~/.agents/skills/` — it does **not** extend back to the repo. Editing `skills/<name>/SKILL.md` in the repo has zero effect on the installed skill until you re-install.
+
+After any edit to a skill in this repo (SKILL.md, scripts/, references/, assets/), run:
+
+```bash
+# Re-install a single edited skill
+npx skills add . -g --agent "*" --skill <skill-name> -y
+
+# Or, after batch edits, re-install everything that's out of date
+npx skills update -g
+```
+
+Same rule when you add a new file inside an existing skill (e.g. a new `scripts/foo.mjs`): the file lives only in the repo until the next `npx skills add`.
+
+### Check state
 
 ```bash
 npx skills check -g    # list outdated skills (needs -g; project-level lock isn't checked)
-npx skills update -g   # reinstall all outdated skills from their source
 ```
 
 ### If a skill is still a copy instead of a symlink
