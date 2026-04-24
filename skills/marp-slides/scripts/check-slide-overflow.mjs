@@ -100,83 +100,62 @@ async function main() {
         ),
       );
     });
-    // Force each section out of Marp's centered/hidden flex state so we can
-    // measure actual child positions. Without this, overflow:hidden + flex
-    // place-content:center can silently clip content of any element type —
-    // scrollHeight stays equal to clientHeight even when content runs over.
-    await page.addStyleTag({
-      content: "section{display:block!important;overflow:visible!important;}",
-    });
-
+    // Measure against the real Marp layout — do NOT force display:block.
+    // With Marp's natural display:flex + place-content:center + overflow:hidden
+    // the section's scrollHeight stays equal to clientHeight even when
+    // content is clipped, so the old approach under-reported overflow.
+    // Instead, for each section, walk every visible descendant and compare
+    // its bounding rect to the section's content-box (section rect minus
+    // padding). Any descendant that sticks out in any direction is
+    // overflow, regardless of nesting depth or CSS positioning mode.
     results = await page.evaluate((tol) => {
-    const sections = Array.from(document.querySelectorAll("section"));
-    return sections.map((s, i) => {
-      const h1 = s.querySelector("h1, h2");
-      const heading = h1 ? h1.textContent.trim().replace(/\s+/g, " ") : "";
-      const scroll = s.scrollHeight;
-      const client = s.clientHeight;
-      const scrollOverflow = scroll - client;
+      return Array.from(document.querySelectorAll("section")).map((s, i) => {
+        const sRect = s.getBoundingClientRect();
+        const style = getComputedStyle(s);
+        const padTop    = parseFloat(style.paddingTop)    || 0;
+        const padRight  = parseFloat(style.paddingRight)  || 0;
+        const padBottom = parseFloat(style.paddingBottom) || 0;
+        const padLeft   = parseFloat(style.paddingLeft)   || 0;
 
-      // Marp uses display:flex + place-content:center with overflow:hidden.
-      // That can silently clip content without changing scrollHeight.
-      // Better signal: sum up direct children's full heights (including margins)
-      // and compare to the section's content-box height (minus padding).
-      const style = getComputedStyle(s);
-      const padTop = parseFloat(style.paddingTop) || 0;
-      const padBottom = parseFloat(style.paddingBottom) || 0;
-      const contentBoxHeight = client - padTop - padBottom;
+        const content = {
+          top:    sRect.top    + padTop,
+          right:  sRect.right  - padRight,
+          bottom: sRect.bottom - padBottom,
+          left:   sRect.left   + padLeft,
+        };
 
-      const kids = Array.from(s.children);
-      let childrenTotalHeight = 0;
-      let imgNaturalOverflow = false;
-      let maxChildBottom = 0;
-      const sRect = s.getBoundingClientRect();
+        const descendants = Array.from(s.querySelectorAll("*")).filter((el) => {
+          const cs = getComputedStyle(el);
+          if (cs.display === "none" || cs.visibility === "hidden") return false;
+          const r = el.getBoundingClientRect();
+          return r.width > 0 && r.height > 0;
+        });
 
-      for (const kid of kids) {
-        const kStyle = getComputedStyle(kid);
-        const marginTop = parseFloat(kStyle.marginTop) || 0;
-        const marginBottom = parseFloat(kStyle.marginBottom) || 0;
-        const kRect = kid.getBoundingClientRect();
-        childrenTotalHeight += kRect.height + marginTop + marginBottom;
-        const kBottomRel = kRect.bottom - sRect.top;
-        if (kBottomRel > maxChildBottom) maxChildBottom = kBottomRel;
-
-        // Check images specifically: does natural aspect ratio exceed render box?
-        const imgs = kid.querySelectorAll("img");
-        for (const img of imgs) {
-          if (img.naturalWidth && img.naturalHeight && img.clientWidth) {
-            const expectedHeight =
-              (img.clientWidth * img.naturalHeight) / img.naturalWidth;
-            // If the image's rendered height is noticeably smaller than the
-            // aspect-ratio height, Marp is clipping/scaling it.
-            if (expectedHeight - img.clientHeight > 3) imgNaturalOverflow = true;
-          }
+        let topOverflow = 0, rightOverflow = 0, bottomOverflow = 0, leftOverflow = 0;
+        for (const el of descendants) {
+          const r = el.getBoundingClientRect();
+          topOverflow    = Math.max(topOverflow,    content.top    - r.top);
+          rightOverflow  = Math.max(rightOverflow,  r.right  - content.right);
+          bottomOverflow = Math.max(bottomOverflow, r.bottom - content.bottom);
+          leftOverflow   = Math.max(leftOverflow,   content.left   - r.left);
         }
-      }
 
-      const childOverflow = Math.max(
-        0,
-        Math.round(childrenTotalHeight - contentBoxHeight),
-      );
-      const bottomOverflow = Math.max(
-        0,
-        Math.round(maxChildBottom - (client - padBottom)),
-      );
-      const overflow = Math.max(scrollOverflow, childOverflow, bottomOverflow);
+        const overflow = Math.max(topOverflow, rightOverflow, bottomOverflow, leftOverflow);
+        const h1 = s.querySelector("h1, h2");
+        const heading = h1 ? h1.textContent.trim().replace(/\s+/g, " ") : "";
 
-      return {
-        index: i + 1,
-        heading,
-        scrollHeight: scroll,
-        clientHeight: client,
-        scrollOverflow,
-        childOverflow,
-        bottomOverflow,
-        overflow,
-        imgNaturalOverflow,
-        overflows: overflow > tol || imgNaturalOverflow,
-      };
-    });
+        return {
+          index: i + 1,
+          heading,
+          clientHeight: s.clientHeight,
+          topOverflow:    Math.round(topOverflow),
+          rightOverflow:  Math.round(rightOverflow),
+          bottomOverflow: Math.round(bottomOverflow),
+          leftOverflow:   Math.round(leftOverflow),
+          overflow: Math.round(overflow),
+          overflows: overflow > tol,
+        };
+      });
     }, TOLERANCE_PX);
   } finally {
     if (browser) await browser.close().catch(() => {});
@@ -198,10 +177,10 @@ async function main() {
   console.log(`OVERFLOW (${flagged.length}):`);
   for (const r of flagged) {
     const tags = [];
-    if (r.imgNaturalOverflow) tags.push("img-clip");
-    if (r.scrollOverflow > TOLERANCE_PX) tags.push(`scroll+${r.scrollOverflow}`);
-    if (r.childOverflow > TOLERANCE_PX) tags.push(`child+${r.childOverflow}`);
+    if (r.topOverflow    > TOLERANCE_PX) tags.push(`top+${r.topOverflow}`);
+    if (r.rightOverflow  > TOLERANCE_PX) tags.push(`right+${r.rightOverflow}`);
     if (r.bottomOverflow > TOLERANCE_PX) tags.push(`bottom+${r.bottomOverflow}`);
+    if (r.leftOverflow   > TOLERANCE_PX) tags.push(`left+${r.leftOverflow}`);
     const tagStr = tags.length ? `[${tags.join(",")}]` : "";
     console.log(
       `  Folie ${String(r.index).padStart(3)} | +${String(r.overflow).padStart(4)}px ${tagStr.padEnd(30)} | ${r.heading || "(kein Heading)"}`
