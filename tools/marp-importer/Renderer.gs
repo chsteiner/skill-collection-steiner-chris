@@ -1,5 +1,5 @@
 /**
- * DHCraft Marp Import — Phase 4 complete (a + b + c + d)
+ * DHCraft Marp Import — Phase 4 complete (a + b + c + d + e)
  *
  * Body rendering:
  *   - paragraph, bulletList, numberedList, blockquote (Phase 4a)
@@ -7,6 +7,13 @@
  *   - table: real Google Slides tables inserted below the body (Phase 4c)
  *   - image: remote-URL images inserted below the body, optional Marp
  *     width:XX% / height:XXpx sizing, aspect ratio preserved (Phase 4d)
+ *   - document-order preservation: text that sits *after* a visual in
+ *     the source markdown (e.g. <small>caption</small> under an image)
+ *     renders below the visual instead of being hoisted to the top of
+ *     the body area (Phase 4e)
+ *   - images clamp their rendered height to the available vertical
+ *     space, re-deriving width from aspect so portrait images or
+ *     width:80% on a tall source don't overflow the canvas (Phase 4e)
  *   - small modifier on any block
  *   - two-column body splitting
  *
@@ -132,70 +139,172 @@ function fillTwoColumnBody(gSlide, columns, slideNum, warnings) {
 }
 
 /**
- * Render a body area: text blocks go into the given shape, visual blocks
- * (tables and images) are stacked below it in original document order.
+ * Render a body area. Preserves document order: text that appears *after*
+ * the last visual in the source is rendered below the visuals, not hoisted
+ * to the top. This matters for the "image plus caption" pattern — without
+ * order preservation, the caption jumps above the image it's captioning.
  *
- * Special cases:
- *   - Body has no blocks at all: clear body text, return.
- *   - Body has only visuals: remove body placeholder and place them in
- *     its area.
- *   - Body has text + visuals: shrink body to make room, visuals below.
- *   - Body has only text: default behaviour.
+ * Blocks are partitioned into three segments by scanning for visuals:
+ *   textBefore — text blocks before the first visual
+ *   visuals    — all visuals, in order
+ *   textAfter  — text blocks after the first visual (incl. any stragglers
+ *                between visuals; lossy for the rare multi-visual-with-
+ *                interleaved-text case, but clean for caption patterns)
+ *
+ * Four rendering cases:
+ *   - Pure text: everything into the body placeholder. Default.
+ *   - Pure visuals: remove body placeholder, stack visuals in its area.
+ *   - Text-before only: body shrinks to text, visuals stack below.
+ *   - Text-after only: visuals render first, body placeholder MOVES down
+ *     below the visual stack and fills the remaining space with textAfter.
+ *     Keeping the body placeholder (rather than a fresh TextBox) preserves
+ *     the layout's theme font/size.
+ *   - Text on both sides: body keeps textBefore; textAfter goes into an
+ *     auxiliary TextBox below the visual stack. Fallback — loses some
+ *     theme inheritance on textAfter but handles the rare mixed case.
  */
 function renderBodyArea(gSlide, bodyShape, blocks, slideNum, warnings) {
   if (!blocks || blocks.length === 0) {
     bodyShape.getText().setText('');
     return;
   }
-  const textBlocks = blocks.filter(b => b.kind !== 'table' && b.kind !== 'image');
-  const visuals    = blocks.filter(b => b.kind === 'table' || b.kind === 'image');
+
+  const textBefore = [];
+  const visuals    = [];
+  const textAfter  = [];
+  let sawVisual = false;
+  for (const b of blocks) {
+    const isVisual = b.kind === 'table' || b.kind === 'image';
+    if (isVisual) { sawVisual = true; visuals.push(b); }
+    else if (sawVisual) textAfter.push(b);
+    else textBefore.push(b);
+  }
 
   const left = bodyShape.getLeft();
   const top = bodyShape.getTop();
   const width = bodyShape.getWidth();
   const height = bodyShape.getHeight();
 
-  if (textBlocks.length === 0 && visuals.length > 0) {
-    // Visuals only: remove body placeholder, put visuals in its area
+  // Pure text: default path.
+  if (visuals.length === 0) {
+    renderBlocksIntoShape(bodyShape, textBefore, slideNum, warnings);
+    return;
+  }
+
+  // Pure visuals: remove body, stack visuals in its area.
+  if (textBefore.length === 0 && textAfter.length === 0) {
     try {
       bodyShape.getText().setText('');
       bodyShape.remove();
     } catch (e) {
       warnings.push('Slide ' + slideNum + ': could not remove empty body: ' + e.message);
     }
-    stackVisualsAt(gSlide, visuals, left, top, width, slideNum, warnings);
-  } else if (visuals.length > 0) {
-    // Mixed: shrink body to ~40% of height, visuals get the rest below
+    stackVisualsAt(gSlide, visuals, left, top, width, height, slideNum, warnings);
+    return;
+  }
+
+  // Text-before only: shrink body to top portion, stack visuals below.
+  if (textBefore.length > 0 && textAfter.length === 0) {
     const textHeight = height * 0.4;
     try { bodyShape.setHeight(textHeight); } catch (e) { /* non-fatal */ }
-    renderBlocksIntoShape(bodyShape, textBlocks, slideNum, warnings);
-    stackVisualsAt(gSlide, visuals, left, top + textHeight + TABLE_GAP_PT, width, slideNum, warnings);
-  } else {
-    // Text only
-    renderBlocksIntoShape(bodyShape, textBlocks, slideNum, warnings);
+    renderBlocksIntoShape(bodyShape, textBefore, slideNum, warnings);
+    stackVisualsAt(gSlide, visuals, left, top + textHeight + TABLE_GAP_PT, width,
+                   height - textHeight - TABLE_GAP_PT, slideNum, warnings);
+    return;
   }
+
+  // Text-after only: visuals at body's top, body placeholder moves below
+  // and holds textAfter. Reserving just enough vertical space for the
+  // expected text length lets the image use most of the slide.
+  if (textBefore.length === 0 && textAfter.length > 0) {
+    const reserved = estimateTextHeight(textAfter);
+    const textAfterHeight = Math.min(reserved, height * 0.35);
+    const visualsHeight   = height - textAfterHeight - TABLE_GAP_PT;
+    const afterVisualsTop = stackVisualsAt(gSlide, visuals, left, top, width,
+                                           visualsHeight, slideNum, warnings);
+    try { bodyShape.setTop(afterVisualsTop); }                          catch (e) { /* non-fatal */ }
+    try { bodyShape.setHeight((top + height) - afterVisualsTop); }      catch (e) { /* non-fatal */ }
+    renderBlocksIntoShape(bodyShape, textAfter, slideNum, warnings);
+    return;
+  }
+
+  // Text both sides: body holds textBefore; textAfter into an aux TextBox.
+  const textBeforeHeight = height * 0.3;
+  const textAfterHeight  = Math.min(estimateTextHeight(textAfter), height * 0.25);
+  const visualsHeight    = height - textBeforeHeight - textAfterHeight - 2 * TABLE_GAP_PT;
+
+  try { bodyShape.setHeight(textBeforeHeight); } catch (e) { /* non-fatal */ }
+  renderBlocksIntoShape(bodyShape, textBefore, slideNum, warnings);
+
+  const visualsTop      = top + textBeforeHeight + TABLE_GAP_PT;
+  const afterVisualsTop = stackVisualsAt(gSlide, visuals, left, visualsTop, width,
+                                         visualsHeight, slideNum, warnings);
+
+  const auxHeight = (top + height) - afterVisualsTop;
+  if (auxHeight > 10) {
+    try {
+      const auxBox = gSlide.insertTextBox('');
+      auxBox.setLeft(left);
+      auxBox.setTop(afterVisualsTop);
+      auxBox.setWidth(width);
+      auxBox.setHeight(auxHeight);
+      renderBlocksIntoShape(auxBox, textAfter, slideNum, warnings);
+    } catch (e) {
+      warnings.push('Slide ' + slideNum + ': could not insert text-after-visuals box: ' + e.message);
+    }
+  } else {
+    warnings.push('Slide ' + slideNum + ': no room for text-after-visuals; ' +
+                  textAfter.length + ' block(s) dropped');
+  }
+}
+
+/**
+ * Rough vertical budget for a run of text blocks. Used only to decide how
+ * much space to reserve between visuals and textAfter — the actual shape
+ * will auto-fit whatever text lands in it.
+ */
+function estimateTextHeight(blocks) {
+  let pt = 0;
+  for (const b of blocks) {
+    const perLine = b.small ? 18 : 24;
+    if (b.kind === 'bulletList' || b.kind === 'numberedList') {
+      pt += (b.items ? b.items.length : 1) * perLine;
+    } else {
+      pt += perLine;
+    }
+  }
+  return Math.max(pt + 8, 30);
 }
 
 /**
  * Insert a stack of visual blocks (tables, images) starting at the given
  * top position. Each block computes its own height; the cursor advances
- * by that height plus TABLE_GAP_PT between blocks.
+ * by that height plus TABLE_GAP_PT between blocks. Images receive the
+ * remaining vertical budget so a tall image can clamp its height rather
+ * than overflow the slide.
+ *
+ * Returns the cursor position after the last block, so callers can stack
+ * more content below the visuals.
  */
-function stackVisualsAt(gSlide, visuals, left, top, width, slideNum, warnings) {
+function stackVisualsAt(gSlide, visuals, left, top, width, maxHeight, slideNum, warnings) {
   let cursorTop = top;
+  let remainingHeight = (maxHeight && maxHeight > 0) ? maxHeight : Infinity;
   visuals.forEach((v, idx) => {
     try {
       let h = 0;
       if (v.kind === 'table') {
         h = renderOneTable(gSlide, v, left, cursorTop, width, slideNum, idx, warnings);
       } else if (v.kind === 'image') {
-        h = renderOneImage(gSlide, v, left, cursorTop, width, slideNum, idx, warnings);
+        h = renderOneImage(gSlide, v, left, cursorTop, width, remainingHeight, slideNum, idx, warnings);
       }
       cursorTop += h + TABLE_GAP_PT;
+      remainingHeight -= (h + TABLE_GAP_PT);
+      if (remainingHeight < 0) remainingHeight = 0;
     } catch (e) {
       warnings.push('Slide ' + slideNum + ': ' + v.kind + ' ' + idx + ' render error — ' + e.message);
     }
   });
+  return cursorTop;
 }
 
 // ---- Text block rendering ----
@@ -399,15 +508,22 @@ function renderOneTable(gSlide, block, left, top, width, slideNum, tableIdx, war
  *   - heightPx with no width directive → heightPx, derive width from aspect
  *   - otherwise  → maxWidth (fills the body area horizontally)
  *
- * Height is computed from the image's native aspect ratio, unless heightPx
- * is explicit. Images are centered horizontally within maxWidth so a
- * narrow figure does not hug the left margin.
+ * Height comes from the image's native aspect ratio unless heightPx is
+ * explicit. After the intent-driven size is computed, the result is
+ * clamped to maxHeight — if the intended height would overflow the
+ * available vertical space, height is capped and width is re-derived
+ * from the aspect ratio so the image stays proportional. Without this
+ * clamp, a tall source image at width:80% could run past the slide's
+ * bottom edge (visible as clipped content in the PDF export).
+ *
+ * Images are centered horizontally within maxWidth so narrow figures
+ * don't hug the left margin.
  *
  * If insertImage fails (bad URL, fetch error, unsupported format), the
  * error is logged as a warning and the function returns 0 — the cursor
  * simply doesn't advance and the next block renders in place.
  */
-function renderOneImage(gSlide, block, left, top, maxWidth, slideNum, idx, warnings) {
+function renderOneImage(gSlide, block, left, top, maxWidth, maxHeight, slideNum, idx, warnings) {
   let img;
   try {
     img = gSlide.insertImage(block.url);
@@ -435,6 +551,13 @@ function renderOneImage(gSlide, block, left, top, maxWidth, slideNum, idx, warni
       // Height pinned, width free → derive width from aspect
       targetW = Math.min(maxWidth, block.heightPx / aspect);
     }
+  }
+
+  // Clamp to available vertical space. Keeps a proportional image inside
+  // the slide canvas at the cost of shrinking it; better than bleed-over.
+  if (maxHeight && maxHeight > 0 && targetH > maxHeight) {
+    targetH = maxHeight;
+    if (aspect > 0) targetW = Math.min(maxWidth, targetH / aspect);
   }
 
   const imgLeft = left + (maxWidth - targetW) / 2;
