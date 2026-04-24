@@ -7,6 +7,17 @@ description: Write markdown presentations for import into Google Slides via the 
 
 Write slide decks as markdown files that import cleanly into a DHCraft Google Slides template via the Apps Script importer. The same file also renders with Marp for quick HTML preview.
 
+## Mode detection
+
+This skill operates in two modes. Decide which up front:
+
+- **Build mode** — the user wants a new deck built from scratch or from raw content they hand you (notes, an outline, transcript, paper). Output is fresh markdown following the conventions below.
+- **Normalize mode** — the user has an existing Marp deck (often authored externally for vanilla Marp, another template, or by a colleague) and wants it rewritten to import cleanly via the DHCraft Apps Script importer. Output is the same deck, edited to comply with the rules in this document.
+
+If the situation is ambiguous, ask: *"Should I build a new deck, or make an existing one import-ready?"*
+
+In both modes, the final markdown must follow the rules below. Build mode produces compliant output in one shot; Normalize mode's job is specifically to identify violations in received content and fix them. The full normalize checklist lives further down — read the conventions first so you know what "compliant" looks like.
+
 ## Layout mapping
 
 Each slide maps to one layout in the DHCraft template:
@@ -156,23 +167,46 @@ Empty slide, to be designed manually in Google Slides after import. No further c
 
 ## Small text
 
-For citations, source notes, fine print. Renders as smaller paragraph at the bottom of the body.
+For citations, source notes, fine print, figure captions. Renders as smaller paragraph at the bottom of the body.
 
-- Inline: `<span class="small">Source: ...</span>`
-- Block: `<div class="small">...</div>` wraps a paragraph or table.
+Three equivalent forms, pick one per line:
+
+- `<small>Source: ...</small>` — standard HTML, also renders smaller in vanilla Marp HTML preview. Preferred when writing a new deck.
+- `<span class="small">Source: ...</span>` — legacy DHCraft form, still accepted by the importer.
+- `<div class="small">...</div>` — wraps a block (paragraph or table) when multiple lines should all be small.
+
+`<small>` can wrap inline formatting: `<small>*Caption in italic*</small>` works.
+
+## Images
+
+`![](url)` inserts an image into the body. Remote URLs (`https://...`) are fetched and embedded by the importer.
+
+- `![](https://example.org/fig.png)` — default width, fits the body area.
+- `![width:70%](https://example.org/fig.png)` — Marp size directive. `width:XX%` is read as a percentage of the slide width. `height:XXpx` also works.
+- `![](img/local-file.png)` — **relative paths don't resolve** from the Apps Script runtime. Either host the file publicly and use the full URL, or drop the image with a `<!-- IMAGE: short description — add manually after import -->` placeholder.
+
+Caption pattern: put the `<small>` line on the line after the image.
+
+```markdown
+![width:75%](https://example.org/fig-workflow.png)
+
+<small>*Three automation logics with different bias sources.*</small>
+```
 
 ## Speaker notes
 
 `<!-- notes: ... -->` anywhere in a slide. Goes into the Google Slides speaker-notes pane.
 
+**The `notes:` prefix is required.** A generic HTML comment without it (`<!-- 45 min block, walk through the table -->`) looks like speaker notes but is silently stripped by the importer. When you see a dangling in-body comment that describes the slide content, rewrite it to `<!-- notes: ... -->`. Non-notes metadata (version history, author TODOs) belong at the very top of the file, before any slide content.
+
 ## What the importer drops (so don't write these)
 
 - Marp frontmatter (stripped entirely, but allowed for dual rendering)
 - `<!-- _class: pause -->`, `<!-- _class: closing -->`, and any class other than `cover` or `blank`
-- Images: `![](...)`, `<img>`. Add manually in Google Slides later.
+- Raw `<img>` tags. Use `![](url)` instead.
 - `<div class="warn">` and other custom callout boxes
 - Marp `<!-- header: -->`, `<!-- footer: -->` directives; the template owns page numbers, logo, branding
-- Raw HTML other than the allowed `div.columns`, `div.small`, `span.small`
+- Raw HTML other than the allowed `div.columns`, `div.small`, `span.small`, `<small>`
 
 ## Writing style
 
@@ -260,6 +294,63 @@ def build_context(project, query):
 
 <!-- _class: blank -->
 ```
+
+## Normalize mode: making an external deck import-ready
+
+When the user hands you an existing Marp deck and wants it imported via the DHCraft importer, run this checklist. External decks typically violate 3–7 of these — fix each one, explain briefly what you changed, and return the revised markdown. Don't rewrite the *content* unless the user asks; just make the markdown compliant.
+
+### 1. Slide-title heading level
+
+If a content slide starts with `## Foo` and has no preceding `# H1`, **promote `##` to `#`**. The importer tolerates `##` as a fallback title so old decks don't silently lose their titles, but `#` is the contract: keeps layout mapping unambiguous and respects Marp's own H1-as-slide-title convention.
+
+Edge case: if the deck uses `#` as a section-slide title and `##` as the first heading of following content slides, the author probably intended the `##` as the slide title. Promote them.
+
+### 2. Title-slide directive on slide 1
+
+If slide 1 reads as a title page (H1 plus subtitle/author information), add `<!-- _class: cover -->` at the very top. Then reshape the content to fit the `dh-title` layout's three text slots:
+
+- Exactly one `# H1` — the title.
+- One `## H2` — the subtitle. If the original has multiple subtitle-like lines, merge them with a bullet separator (`Session 3 · Gender, Diversity & AI · Klagenfurt SS2026`) or pick the most load-bearing one.
+- One `### H3` — the author (or author + affiliation).
+- Anything else — demote to `<small>` on a body line, or cut.
+
+Don't leave extra paragraphs on a title slide. The importer warns and drops them, but the warning is silent in practice; cleaner to fix it in normalize.
+
+### 3. Images
+
+The importer inserts remote-URL images directly. For external decks that reference local paths (`img/fig.png`), one of:
+
+- **Best:** host the image publicly (GitHub Raw URL, DHCraft static, imgur, etc.) and rewrite the path to the full URL.
+- **Second-best:** replace with `<!-- IMAGE: short description of what the figure shows — add manually after import -->`. The comment survives the markdown and gives the author a TODO in the Google Slides deck.
+
+Preserve Marp size directives: `![width:75%](url)` stays `![width:75%](...)`. Don't strip them.
+
+### 4. `<small>` vs. `<span class="small">`
+
+Both work. If the deck already uses one consistently, leave it. If it's a mix, normalize to `<small>` (shorter, standard HTML, also renders smaller in vanilla Marp preview).
+
+### 5. In-body HTML comments without `notes:` prefix
+
+A `<!-- ... -->` block inside slide content that describes the slide (e.g. `<!-- 45 min block, walk through the cluster table then student presentations -->`) is almost always a dropped speaker note. Rewrite to `<!-- notes: ... -->`.
+
+Exceptions: top-of-file metadata comments (version history, load-bearing-slide index, review log) can stay at the very top of the file. They sit before any slide content and are stripped silently — that's intended.
+
+### 6. Em-dash → en-dash with spaces
+
+Global replace `—` with ` – ` (space, en-dash, space). Skill convention, holds in both rendering paths.
+
+Don't touch em-dashes inside code blocks or code spans.
+
+### 7. Forbidden classes and tags
+
+Remove or rewrite:
+
+- `<!-- _class: pause -->`, `<!-- _class: closing -->`, and anything other than `cover`, `blank` → delete the directive.
+- `<div class="warn">` and other callouts → promote the content to a plain blockquote or drop the wrapper.
+- Raw `<img src="...">` → convert to `![](url)` or drop with a placeholder.
+- Marp `<!-- header: -->`, `<!-- footer: -->` → delete. The template owns those.
+
+After these seven passes, run the overflow check (`scripts/check-slide-overflow.mjs`) to catch any slide whose content doesn't fit the canvas.
 
 ## QA: overflow check
 
