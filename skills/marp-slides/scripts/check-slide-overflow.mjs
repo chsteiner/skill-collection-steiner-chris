@@ -15,9 +15,8 @@
  */
 
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, rmSync, existsSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join, basename, resolve } from "node:path";
+import { rmSync, existsSync } from "node:fs";
+import { join, basename, dirname, resolve } from "node:path";
 import { createRequire } from "node:module";
 
 const require = createRequire(import.meta.url);
@@ -42,8 +41,13 @@ async function main() {
     process.exit(1);
   }
 
-  const workDir = mkdtempSync(join(tmpdir(), "marp-overflow-"));
-  const htmlPath = join(workDir, basename(deckPath).replace(/\.md$/i, ".html"));
+  // Render alongside the source so relative image paths resolve normally.
+  // Dot-prefixed filename keeps it out of `ls`; cleaned up after the run.
+  const deckDir = dirname(deckPath);
+  const htmlPath = join(
+    deckDir,
+    "." + basename(deckPath).replace(/\.md$/i, "") + ".overflow-check.html",
+  );
 
   const marpBin = process.platform === "win32" ? "marp.cmd" : "marp";
   const render = spawnSync(
@@ -54,14 +58,25 @@ async function main() {
   if (render.status !== 0) {
     console.error("marp render fehlgeschlagen:");
     console.error(render.stderr?.toString() || render.stdout?.toString());
-    rmSync(workDir, { recursive: true, force: true });
+    rmSync(htmlPath, { force: true });
     process.exit(2);
   }
 
   const browser = await chromium.launch();
-  const page = await browser.newPage({ viewport: { width: 1400, height: 900 } });
+  // Marp sections render at 1280x720. Match viewport so CSS dimensions,
+  // pixel density, and text wrapping behave like the PDF export.
+  const page = await browser.newPage({
+    viewport: { width: 1280, height: 720 },
+  });
   await page.goto("file://" + htmlPath.replace(/\\/g, "/"));
   await page.waitForLoadState("networkidle");
+  // Force each section out of Marp's centered/hidden flex state so we can
+  // measure actual child positions. Without this, overflow:hidden + flex
+  // place-content:center can silently clip content of any element type —
+  // scrollHeight stays equal to clientHeight even when content runs over.
+  await page.addStyleTag({
+    content: "section{display:block!important;overflow:visible!important;}",
+  });
 
   const results = await page.evaluate((tol) => {
     const sections = Array.from(document.querySelectorAll("section"));
@@ -70,20 +85,72 @@ async function main() {
       const heading = h1 ? h1.textContent.trim().replace(/\s+/g, " ") : "";
       const scroll = s.scrollHeight;
       const client = s.clientHeight;
-      const overflow = scroll - client;
+      const scrollOverflow = scroll - client;
+
+      // Marp uses display:flex + place-content:center with overflow:hidden.
+      // That can silently clip content without changing scrollHeight.
+      // Better signal: sum up direct children's full heights (including margins)
+      // and compare to the section's content-box height (minus padding).
+      const style = getComputedStyle(s);
+      const padTop = parseFloat(style.paddingTop) || 0;
+      const padBottom = parseFloat(style.paddingBottom) || 0;
+      const contentBoxHeight = client - padTop - padBottom;
+
+      const kids = Array.from(s.children);
+      let childrenTotalHeight = 0;
+      let imgNaturalOverflow = false;
+      let maxChildBottom = 0;
+      const sRect = s.getBoundingClientRect();
+
+      for (const kid of kids) {
+        const kStyle = getComputedStyle(kid);
+        const marginTop = parseFloat(kStyle.marginTop) || 0;
+        const marginBottom = parseFloat(kStyle.marginBottom) || 0;
+        const kRect = kid.getBoundingClientRect();
+        childrenTotalHeight += kRect.height + marginTop + marginBottom;
+        const kBottomRel = kRect.bottom - sRect.top;
+        if (kBottomRel > maxChildBottom) maxChildBottom = kBottomRel;
+
+        // Check images specifically: does natural aspect ratio exceed render box?
+        const imgs = kid.querySelectorAll("img");
+        for (const img of imgs) {
+          if (img.naturalWidth && img.naturalHeight && img.clientWidth) {
+            const expectedHeight =
+              (img.clientWidth * img.naturalHeight) / img.naturalWidth;
+            // If the image's rendered height is noticeably smaller than the
+            // aspect-ratio height, Marp is clipping/scaling it.
+            if (expectedHeight - img.clientHeight > 3) imgNaturalOverflow = true;
+          }
+        }
+      }
+
+      const childOverflow = Math.max(
+        0,
+        Math.round(childrenTotalHeight - contentBoxHeight),
+      );
+      const bottomOverflow = Math.max(
+        0,
+        Math.round(maxChildBottom - (client - padBottom)),
+      );
+      const overflow = Math.max(scrollOverflow, childOverflow, bottomOverflow);
+
       return {
         index: i + 1,
         heading,
         scrollHeight: scroll,
         clientHeight: client,
+        scrollOverflow,
+        childOverflow,
+        bottomOverflow,
         overflow,
-        overflows: overflow > tol,
+        imgNaturalOverflow,
+        overflows: overflow > tol || imgNaturalOverflow,
       };
     });
   }, TOLERANCE_PX);
 
   await browser.close();
-  rmSync(workDir, { recursive: true, force: true });
+  rmSync(htmlPath, { force: true });
 
   const flagged = results.filter((r) => r.overflows);
 
@@ -99,9 +166,14 @@ async function main() {
 
   console.log(`OVERFLOW (${flagged.length}):`);
   for (const r of flagged) {
-    const overBy = r.overflow;
+    const tags = [];
+    if (r.imgNaturalOverflow) tags.push("img-clip");
+    if (r.scrollOverflow > TOLERANCE_PX) tags.push(`scroll+${r.scrollOverflow}`);
+    if (r.childOverflow > TOLERANCE_PX) tags.push(`child+${r.childOverflow}`);
+    if (r.bottomOverflow > TOLERANCE_PX) tags.push(`bottom+${r.bottomOverflow}`);
+    const tagStr = tags.length ? `[${tags.join(",")}]` : "";
     console.log(
-      `  Folie ${String(r.index).padStart(3)} | +${String(overBy).padStart(4)}px | ${r.heading || "(kein Heading)"}`
+      `  Folie ${String(r.index).padStart(3)} | +${String(r.overflow).padStart(4)}px ${tagStr.padEnd(30)} | ${r.heading || "(kein Heading)"}`
     );
   }
   process.exitCode = flagged.length > 0 ? 3 : 0;
