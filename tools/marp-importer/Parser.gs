@@ -10,17 +10,20 @@
  *       <!-- _class: cover --> → title
  *       <!-- _class: blank --> → blank
  *       body contains <div class="columns"> → twocolumn
- *       lone # H1 with no body → section
+ *       lone # or ## heading with no body → section
  *       otherwise → content
  *   - Title slide: # H1, optional ## H2 (subtitle), optional ### H3 (author)
- *   - Section slide: # H1 only. ## H2 is dropped with a warning.
+ *   - Section slide: # H1 only (## also accepted). ## as subtitle is dropped.
+ *   - Content slide: # H1 preferred, ## accepted as fallback title with warning
  *   - Content/twocolumn body blocks: paragraph, bulletList, numberedList,
- *     codeBlock, table, blockquote
- *   - Small-text modifier via <span class="small"> (inline, whole line)
- *     or <div class="small"> (wrapping multiple blocks)
+ *     codeBlock, table, blockquote, image
+ *   - Small-text modifier via <small>...</small>, <span class="small">,
+ *     or <div class="small">
  *   - Speaker notes via <!-- notes: ... --> anywhere in the slide
  *   - Inline formatting: **bold**, *italic*, `code`, [text](url)
- *   - Images are dropped with a warning (to be added manually later)
+ *   - Images ![](url): remote URLs rendered inline with optional Marp
+ *     size directives (width:XX%, height:XXpx); relative paths dropped
+ *     with a warning
  *
  * Returns { slides, warnings }.
  */
@@ -129,7 +132,7 @@ function parseSlide(text, slideNum, warnings) {
     slide.type = 'content';
   } else if (/<div class="columns">/.test(text)) {
     slide.type = 'twocolumn';
-  } else if (isLoneH1(text)) {
+  } else if (isLoneHeading(text)) {
     slide.type = 'section';
   } else {
     slide.type = 'content';
@@ -144,15 +147,18 @@ function parseSlide(text, slideNum, warnings) {
   }
 }
 
-function isLoneH1(text) {
+/**
+ * A slide is a "section" if its only non-empty content is a single
+ * # H1 or ## H2 heading. External decks often use ## as the slide title
+ * — we accept both so those slides still register as sections (and not
+ * as titleless content slides).
+ */
+function isLoneHeading(text) {
   const lines = text.split('\n')
     .map(l => l.trim())
     .filter(l => l !== '');
-  if (lines.length === 0) return false;
-  // First non-empty line must be # H1 (not ##, not ###)
-  if (!/^#\s+\S/.test(lines[0]) || /^##/.test(lines[0])) return false;
-  // All remaining lines must be empty (already filtered). Lone H1 confirmed.
-  return lines.length === 1;
+  if (lines.length !== 1) return false;
+  return /^#{1,2}\s+\S/.test(lines[0]) && !/^###/.test(lines[0]);
 }
 
 function parseTitleSlide(text, slide, slideNum, warnings) {
@@ -179,19 +185,29 @@ function parseTitleSlide(text, slide, slideNum, warnings) {
 }
 
 function parseSectionSlide(text, slide, slideNum, warnings) {
-  const m = /^#\s+(.+)$/m.exec(text);
-  slide.title = m ? m[1].trim() : '';
-  if (/^##\s/m.test(text)) {
-    warnings.push('Slide ' + slideNum + ' (section): ## subtitle dropped (section slides have no subtitle)');
+  // Accept either # H1 or ## H2 as the section title. If both are present,
+  // # takes precedence and ## is dropped with a warning (section slides
+  // don't support a subtitle in the dh-section layout).
+  const h1 = /^#\s+(.+)$/m.exec(text);
+  if (h1) {
+    slide.title = h1[1].trim();
+    if (/^##\s/m.test(text)) {
+      warnings.push('Slide ' + slideNum + ' (section): ## subtitle dropped (section slides have no subtitle)');
+    }
+  } else {
+    const h2 = /^##\s+(.+)$/m.exec(text);
+    slide.title = h2 ? h2[1].trim() : '';
   }
   return slide;
 }
 
 function parseContentSlide(text, slide, slideNum, warnings) {
-  const { title, bodyText } = extractTitle(text);
+  const { title, bodyText, titleLevel } = extractTitle(text);
   slide.title = title;
   if (!title) {
-    warnings.push('Slide ' + slideNum + ' (content): no # H1 heading found');
+    warnings.push('Slide ' + slideNum + ' (content): no # or ## heading found');
+  } else if (titleLevel === 2) {
+    warnings.push('Slide ' + slideNum + ' (content): ## used as slide title (prefer # H1); tolerant fallback applied');
   }
   slide.body = parseBody(bodyText, slideNum, warnings);
   return slide;
@@ -253,18 +269,40 @@ function parseTwoColumnSlide(text, slide, slideNum, warnings) {
   return slide;
 }
 
+/**
+ * Find the slide title and return { title, bodyText, titleLevel }.
+ * titleLevel is 1 (found # H1), 2 (fallback to ## H2), or 0 (no heading).
+ *
+ * The ## fallback is tolerant of external decks authored for vanilla Marp,
+ * where ## is often used as the slide title. The caller (parseContentSlide)
+ * emits a warning when the fallback fires, so authors notice they're not
+ * following the DHCraft contract — but the slide still gets a title.
+ */
 function extractTitle(text) {
   const lines = text.split('\n');
+  // Prefer a # H1
   for (let i = 0; i < lines.length; i++) {
     const t = lines[i].trim();
     if (/^#\s+\S/.test(t) && !/^##/.test(t)) {
       return {
         title: t.replace(/^#\s+/, ''),
-        bodyText: lines.slice(i + 1).join('\n')
+        bodyText: lines.slice(i + 1).join('\n'),
+        titleLevel: 1
       };
     }
   }
-  return { title: '', bodyText: text };
+  // Fallback: first ## H2 acts as title
+  for (let i = 0; i < lines.length; i++) {
+    const t = lines[i].trim();
+    if (/^##\s+\S/.test(t) && !/^###/.test(t)) {
+      return {
+        title: t.replace(/^##\s+/, ''),
+        bodyText: lines.slice(i + 1).join('\n'),
+        titleLevel: 2
+      };
+    }
+  }
+  return { title: '', bodyText: text, titleLevel: 0 };
 }
 
 /**
@@ -282,10 +320,38 @@ function parseBody(text, slideNum, warnings) {
 
     if (trimmed === '') { i++; continue; }
 
-    // Images: dropped
+    // Image: ![alt-with-optional-size-directives](url)
+    // Remote URLs (http/https) are inserted into the slide. Relative paths
+    // are dropped with a warning — the Apps Script runtime can't resolve
+    // local paths from the author's filesystem. Marp size directives
+    // (width:XX%, width:XXpx, height:XXpx, with w:/h: short forms) are
+    // parsed out of the alt text.
     if (/^!\[/.test(trimmed)) {
-      warnings.push('Slide ' + slideNum + ': image dropped (' +
-                    trimmed.slice(0, 50) + (trimmed.length > 50 ? '…' : '') + ')');
+      const imgMatch = /^!\[([^\]]*)\]\(([^)]+)\)\s*$/.exec(trimmed);
+      if (!imgMatch) {
+        warnings.push('Slide ' + slideNum + ': malformed image syntax — dropped ("' +
+                      trimmed.slice(0, 60) + (trimmed.length > 60 ? '…' : '') + '")');
+        i++; continue;
+      }
+      const alt = imgMatch[1];
+      const url = imgMatch[2].trim();
+      if (!/^https?:\/\//i.test(url)) {
+        warnings.push('Slide ' + slideNum + ': image with relative path dropped (' +
+                      url + ') — host it publicly and use a full URL');
+        i++; continue;
+      }
+      const widthPctM  = /(?:^|\s)(?:width|w):(\d+)%(?:\s|$)/.exec(alt);
+      const widthPxM   = /(?:^|\s)(?:width|w):(\d+)px(?:\s|$)/.exec(alt);
+      const heightPxM  = /(?:^|\s)(?:height|h):(\d+)px(?:\s|$)/.exec(alt);
+      blocks.push({
+        kind: 'image',
+        url: url,
+        alt: alt,
+        widthPct: widthPctM ? parseInt(widthPctM[1], 10) : null,
+        widthPx:  widthPxM  ? parseInt(widthPxM[1],  10) : null,
+        heightPx: heightPxM ? parseInt(heightPxM[1], 10) : null,
+        small: smallContext
+      });
       i++; continue;
     }
 
@@ -304,6 +370,13 @@ function parseBody(text, slideNum, warnings) {
     const spanOne = /^<span class="small">([\s\S]*?)<\/span>\s*$/.exec(trimmed);
     if (spanOne) {
       blocks.push({ kind: 'paragraph', runs: parseInline(spanOne[1]), small: true });
+      i++; continue;
+    }
+
+    // Whole-line <small>...</small> → small paragraph (standard HTML form)
+    const smallOne = /^<small>([\s\S]*?)<\/small>\s*$/.exec(trimmed);
+    if (smallOne) {
+      blocks.push({ kind: 'paragraph', runs: parseInline(smallOne[1]), small: true });
       i++; continue;
     }
 
@@ -401,7 +474,7 @@ function parseBody(text, slideNum, warnings) {
       if (/^(#|>|\||```)/.test(t)) break;
       if (/^\s*[-*+]\s+/.test(l)) break;
       if (/^\s*\d+\.\s+/.test(l)) break;
-      if (/^<(div|\/div|span class="small")/.test(t)) break;
+      if (/^<(div|\/div|span class="small"|small|\/small)/.test(t)) break;
       if (/^!\[/.test(t)) break;
       paraLines.push(t);
       i++;

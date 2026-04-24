@@ -1,12 +1,17 @@
 /**
- * DHCraft Marp Import — Phase 4 complete (a + b + c)
+ * DHCraft Marp Import — Phase 4 complete (a + b + c + d)
  *
  * Body rendering:
  *   - paragraph, bulletList, numberedList, blockquote (Phase 4a)
  *   - codeBlock: monospace, smaller font (Phase 4b)
  *   - table: real Google Slides tables inserted below the body (Phase 4c)
+ *   - image: remote-URL images inserted below the body, optional Marp
+ *     width:XX% / height:XXpx sizing, aspect ratio preserved (Phase 4d)
  *   - small modifier on any block
  *   - two-column body splitting
+ *
+ * Tables and images together are called "visual blocks" and share the
+ * stacking machinery below the body shape.
  *
  * Existing slides are untouched. Slides are appended at the end of the
  * presentation. Replace flow is Phase 5.
@@ -22,6 +27,9 @@ const BLOCKQUOTE_INDENT_PT = 18;
 const TABLE_GAP_PT = 8;                // vertical gap between body and table / between tables
 const TABLE_CELL_FONT_SIZE_PT = 12;
 const TABLE_CELL_FONT_SIZE_SMALL_PT = 10;
+
+// Image layout (images reuse TABLE_GAP_PT for stacking)
+const IMAGE_DEFAULT_ASPECT = 0.6;  // fallback if native dimensions unavailable
 
 // ---- Entry point ----
 
@@ -124,14 +132,14 @@ function fillTwoColumnBody(gSlide, columns, slideNum, warnings) {
 }
 
 /**
- * Render a body area: text blocks go into the given shape, tables are
- * inserted as real Google Slides tables stacked below it.
+ * Render a body area: text blocks go into the given shape, visual blocks
+ * (tables and images) are stacked below it in original document order.
  *
  * Special cases:
  *   - Body has no blocks at all: clear body text, return.
- *   - Body has only tables (no text blocks): remove body placeholder and
- *     place tables inside the body area.
- *   - Body has text + tables: shrink body to make room, tables below.
+ *   - Body has only visuals: remove body placeholder and place them in
+ *     its area.
+ *   - Body has text + visuals: shrink body to make room, visuals below.
  *   - Body has only text: default behaviour.
  */
 function renderBodyArea(gSlide, bodyShape, blocks, slideNum, warnings) {
@@ -139,29 +147,29 @@ function renderBodyArea(gSlide, bodyShape, blocks, slideNum, warnings) {
     bodyShape.getText().setText('');
     return;
   }
-  const textBlocks = blocks.filter(b => b.kind !== 'table');
-  const tables = blocks.filter(b => b.kind === 'table');
+  const textBlocks = blocks.filter(b => b.kind !== 'table' && b.kind !== 'image');
+  const visuals    = blocks.filter(b => b.kind === 'table' || b.kind === 'image');
 
   const left = bodyShape.getLeft();
   const top = bodyShape.getTop();
   const width = bodyShape.getWidth();
   const height = bodyShape.getHeight();
 
-  if (textBlocks.length === 0 && tables.length > 0) {
-    // Tables only: remove body placeholder, put tables in its area
+  if (textBlocks.length === 0 && visuals.length > 0) {
+    // Visuals only: remove body placeholder, put visuals in its area
     try {
       bodyShape.getText().setText('');
       bodyShape.remove();
     } catch (e) {
       warnings.push('Slide ' + slideNum + ': could not remove empty body: ' + e.message);
     }
-    stackTablesAt(gSlide, tables, left, top, width, slideNum, warnings);
-  } else if (tables.length > 0) {
-    // Mixed: shrink body to ~40% of height, tables get the rest below
+    stackVisualsAt(gSlide, visuals, left, top, width, slideNum, warnings);
+  } else if (visuals.length > 0) {
+    // Mixed: shrink body to ~40% of height, visuals get the rest below
     const textHeight = height * 0.4;
     try { bodyShape.setHeight(textHeight); } catch (e) { /* non-fatal */ }
     renderBlocksIntoShape(bodyShape, textBlocks, slideNum, warnings);
-    stackTablesAt(gSlide, tables, left, top + textHeight + TABLE_GAP_PT, width, slideNum, warnings);
+    stackVisualsAt(gSlide, visuals, left, top + textHeight + TABLE_GAP_PT, width, slideNum, warnings);
   } else {
     // Text only
     renderBlocksIntoShape(bodyShape, textBlocks, slideNum, warnings);
@@ -169,17 +177,23 @@ function renderBodyArea(gSlide, bodyShape, blocks, slideNum, warnings) {
 }
 
 /**
- * Insert a stack of tables starting at the given top position, each
- * using the full provided width.
+ * Insert a stack of visual blocks (tables, images) starting at the given
+ * top position. Each block computes its own height; the cursor advances
+ * by that height plus TABLE_GAP_PT between blocks.
  */
-function stackTablesAt(gSlide, tables, left, top, width, slideNum, warnings) {
+function stackVisualsAt(gSlide, visuals, left, top, width, slideNum, warnings) {
   let cursorTop = top;
-  tables.forEach((t, idx) => {
+  visuals.forEach((v, idx) => {
     try {
-      const height = renderOneTable(gSlide, t, left, cursorTop, width, slideNum, idx, warnings);
-      cursorTop += height + TABLE_GAP_PT;
+      let h = 0;
+      if (v.kind === 'table') {
+        h = renderOneTable(gSlide, v, left, cursorTop, width, slideNum, idx, warnings);
+      } else if (v.kind === 'image') {
+        h = renderOneImage(gSlide, v, left, cursorTop, width, slideNum, idx, warnings);
+      }
+      cursorTop += h + TABLE_GAP_PT;
     } catch (e) {
-      warnings.push('Slide ' + slideNum + ': table ' + idx + ' render error — ' + e.message);
+      warnings.push('Slide ' + slideNum + ': ' + v.kind + ' ' + idx + ' render error — ' + e.message);
     }
   });
 }
@@ -352,4 +366,63 @@ function renderOneTable(gSlide, block, left, top, width, slideNum, tableIdx, war
   let h = 0;
   try { h = table.getHeight() || 0; } catch (e) { /* non-fatal */ }
   return h;
+}
+
+// ---- Images ----
+
+/**
+ * Insert one image, size it, position it, and return the rendered height.
+ *
+ * Sizing rules (in order of precedence):
+ *   - widthPct   → maxWidth * (pct / 100), clamped to maxWidth
+ *   - widthPx    → min(maxWidth, widthPx)
+ *   - heightPx with no width directive → heightPx, derive width from aspect
+ *   - otherwise  → maxWidth (fills the body area horizontally)
+ *
+ * Height is computed from the image's native aspect ratio, unless heightPx
+ * is explicit. Images are centered horizontally within maxWidth so a
+ * narrow figure does not hug the left margin.
+ *
+ * If insertImage fails (bad URL, fetch error, unsupported format), the
+ * error is logged as a warning and the function returns 0 — the cursor
+ * simply doesn't advance and the next block renders in place.
+ */
+function renderOneImage(gSlide, block, left, top, maxWidth, slideNum, idx, warnings) {
+  let img;
+  try {
+    img = gSlide.insertImage(block.url);
+  } catch (e) {
+    warnings.push('Slide ' + slideNum + ' image ' + idx + ' (' + block.url +
+                  '): insertImage failed — ' + e.message);
+    return 0;
+  }
+
+  let nativeW = 0, nativeH = 0;
+  try { nativeW = img.getWidth();  } catch (e) { /* non-fatal */ }
+  try { nativeH = img.getHeight(); } catch (e) { /* non-fatal */ }
+  const aspect = (nativeW > 0 && nativeH > 0) ? (nativeH / nativeW) : IMAGE_DEFAULT_ASPECT;
+
+  let targetW = maxWidth;
+  if (block.widthPct != null) {
+    targetW = Math.min(maxWidth, maxWidth * (block.widthPct / 100));
+  } else if (block.widthPx != null) {
+    targetW = Math.min(maxWidth, block.widthPx);
+  }
+  let targetH = targetW * aspect;
+  if (block.heightPx != null) {
+    targetH = block.heightPx;
+    if (block.widthPct == null && block.widthPx == null && aspect > 0) {
+      // Height pinned, width free → derive width from aspect
+      targetW = Math.min(maxWidth, block.heightPx / aspect);
+    }
+  }
+
+  const imgLeft = left + (maxWidth - targetW) / 2;
+
+  try { img.setLeft(imgLeft); }   catch (e) { /* non-fatal */ }
+  try { img.setTop(top); }        catch (e) { /* non-fatal */ }
+  try { img.setWidth(targetW); }  catch (e) { /* non-fatal */ }
+  try { img.setHeight(targetH); } catch (e) { /* non-fatal */ }
+
+  return targetH;
 }
