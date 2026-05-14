@@ -24,6 +24,7 @@ Each skill lives in its own folder under `skills/`. Subfolders inside a skill ar
 - **Folder name** = skill name (kebab-case, e.g. `check-md`)
 - **Frontmatter** must include: `name`, `description` (with trigger phrases)
 - **`disable-model-invocation: true`** for skills that should only fire on explicit slash-command (e.g. audits, reviews). Omit for skills that benefit from auto-triggering (e.g. writing/formatting skills).
+  - **Hybrid skills** (reference/style guidance *plus* an optional explicit audit, e.g. `anti-slop`) keep `disable-model-invocation` off — they have no side effects and should auto-apply during generation. Steer triggering through a precise `description` instead: name both the explicit trigger phrases and the symptom-language a user would actually type, and list the `Not for…` exclusions.
 - **Description** should list both EN and DE trigger phrases where applicable
 - **Output language** matches the input/document language (bilingual repo: DE/EN)
 - Keep skills focused: one skill = one job
