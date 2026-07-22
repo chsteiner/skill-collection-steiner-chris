@@ -44,8 +44,11 @@ Each candidate carries its fact ID and its confidence class from facts.md
 $ARGUMENTS contains `offline` or `static` (use that when you know the facts are
 fresh or you need speed). For each candidate:
 
-- **`logic`**: follows from the file itself (e.g. a fallback that resolves to
-  the same model). No external fact to check. Emit as-is, plainly.
+- **`logic`**: follows purely from the file itself with no claim about how Claude
+  Code behaves (e.g. a fallback that resolves to the same model, or two rules that
+  are byte-for-byte redundant). No external fact to check. Emit as-is, plainly.
+  **Guard:** the moment a finding rests on *how Claude Code enforces something*, it
+  is not `logic`. See the enforcement-semantics rule below.
 - **`schema`**: documented (key names, valid values, deprecations). Fetch the
   relevant page under `code.claude.com/docs` and confirm. **Confirmed** → keep as
   stated, cite the doc. **Refuted** → drop the finding and note that facts.md is
@@ -58,6 +61,24 @@ fresh or you need speed). For each candidate:
 Verification is scoped to the keys the file actually contains: a couple of
 targeted doc fetches, not a research sweep. That is the point of doing it
 per-finding rather than pre-loading everything.
+
+**Enforcement-semantics are never `logic`.** Any claim about how Claude Code's
+permission engine actually behaves is empirical, not deducible from the file, no
+matter how self-evident the reasoning feels. Examples that fooled an earlier run:
+"a `deny Read(...)` rule doesn't cover a shell `cat` of the same path", "a bare
+`Bash` allow lets Claude run any command in `auto` mode", "the classifier does /
+doesn't check X". These are `schema`-class: verify them against
+`code.claude.com/docs/en/permission-modes` (and `/permissions`) before emitting.
+Two hard rules follow:
+
+- **Never emit a CRITICAL (or any security finding) whose core rests on an
+  unverified enforcement claim.** If the doc-check is skipped (`offline`) or the
+  page is unreachable, downgrade the severity and hedge, do not assert the exposure.
+- The permission model is layered and mode-dependent (`auto` drops broad
+  execution allows and routes to a classifier; `deny`/`ask` are the only hard
+  guarantees; `Read(...)` rules are file-read-scoped). A finding that ignores the
+  active mode is almost certainly miscalibrated. Read `references/facts.md` F13/F14
+  before writing anything about shell + `auto` + `deny`.
 
 ## Confidence sets the tone
 
@@ -98,7 +119,11 @@ in `references/facts.md` (fact IDs in brackets).
    `defaultMode: "auto"` or `bypassPermissions`; absence of `deny` rules for
    sensitive reads (`.env`, `secrets`, `~/.ssh`, `~/.aws`, `~/.gnupg`): flag
    only the gaps, presence is good; MCP servers or `additionalDirectories` that
-   grant wide access.
+   grant wide access. **Read the active mode first** [F13/F14]: a broad `Bash`/
+   `PowerShell` allow means something very different in `default` than in `auto`
+   (which drops it and routes to the classifier). Do not describe an exposure
+   without saying which mode makes it real, and verify the enforcement claim per
+   the enforcement-semantics rule above before assigning severity.
 
 4. **Schema and scope validity.** Session-only values in a persistent key
    (`max`/`ultracode` in `effortLevel`) [F4]; before flagging a value as invalid,

@@ -6,7 +6,8 @@ nicht. Wer die Fakten aktualisiert, ändert nur diese Datei.
 
 **Stand:** 2026-07-22. Die meisten Behauptungen stammen aus dem ursprünglichen
 Skill-Entwurf. Am 2026-07-22 wurden F1, F2, F5, F7 gegen `code.claude.com/docs`
-verifiziert und korrigiert (Details in den Zeilen). Der Rest ist weiter **nicht
+verifiziert und korrigiert, und F13/F14 (Permission-Enforcement) neu aus der
+permission-modes-Doku belegt (Details in den Zeilen). Der Rest ist weiter **nicht
 unabhängig verifiziert**. Genau deshalb koppelt der Skill seinen Ton an die
 Confidence-Klasse und prüft `schema`- und `heuristic`-Fakten zur Laufzeit nach
 (siehe SKILL.md, Pass 2).
@@ -38,6 +39,8 @@ Confidence-Klasse und prüft `schema`- und `heuristic`-Fakten zur Laufzeit nach
 | F10 | `--enable-auto-mode` (in Aliassen/Skripten) | schema | Deprecated seit v2.1.111; stattdessen `--permission-mode auto` oder `defaultMode: "auto"` | Changelog/CLI-Doku |
 | F11 | `defaultMode` gültige Werte | schema | Prüfen, welche Werte gültig sind (u. a. `auto`), bevor ein Wert als ungültig geflaggt wird | Settings-Referenz (defaultMode-Enum) |
 | F12 | Unbekannter Key | logic | Als „unrecognized, gegen aktuelle Doku prüfen" markieren, nicht als ungültig behaupten | keine |
+| F13 | Bare `Bash`/`PowerShell` (bzw. `Bash(*)`) in `allow` **bei `defaultMode: "auto"`** | schema | Auto-Modus **droppt** genau diese Blanket-Allows beim Eintritt: „On entering auto mode, broad allow rules that grant arbitrary code execution are dropped: Blanket `Bash(*)` or `PowerShell(*)`, Wildcarded interpreters like `Bash(python*)`, Package-manager run commands, `Agent` allow rules." Narrow-Rules (`Bash(npm test)`) bleiben. Alles andere geht an den Classifier. Ein bares `Bash`/`PowerShell` gewährt im **Auto**-Modus also **keine** freie Shell (im `default`-Modus dagegen schon → dort ist der Befund berechtigt). `defaultMode: "auto"` wirkt nur in User-Settings, in Projekt/Local wird es ignoriert. Verifiziert 2026-07-22. | permission-modes-Doku (Eliminate prompts with auto mode; How the classifier evaluates actions) |
+| F14 | `deny`-Reichweite vs. Shell / sensible Reads | schema | `deny`/`ask` gelten in **jedem** Modus und sind die **einzigen harten** Garantien. Aber ein `Read(...)`-deny ist file-read-skopiert; es blockt nicht statisch einen Shell-`cat` desselben Pfads. Im **Auto**-Modus deckt der Classifier das weich ab: blockt u. a. „Printing a live credential or token into the transcript or a file" und Exfil aus Credential-Ordnern (SSH-Keys, Cloud-Creds); **`.env` lesen ist im Auto-Modus dagegen per Default erlaubt** („Reading `.env` and sending credentials to their matching API"). Weicher Check, keine Garantie. Für eine **harte** Shell-Schranke → `ask`-Regel. Verifiziert 2026-07-22. **Nie** einen CRITICAL auf „Shell liest ungeprüft an deny vorbei" stützen, ohne Modus + diese Mechanik zu prüfen. | permission-modes-Doku (What the classifier blocks/allows by default) |
 
 ## Lösch-Sicherheit
 
