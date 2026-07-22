@@ -8,6 +8,7 @@ Personal collection of [Claude Code](https://docs.anthropic.com/en/docs/claude-c
 |-------|-------------|
 | [anti-slop](skills/anti-slop/) | Detect and eliminate AI-generated writing patterns (EN/DE) |
 | [check-md](skills/check-md/) | Review markdown documents for factual errors, logic breaks, and gaps |
+| [check-settings](skills/check-settings/) | Audit a Claude Code settings.json for cost, deprecated keys, scope, and schema issues, verified against the live docs |
 | [marp-slides](skills/marp-slides/) | Write or normalize Marp markdown for the DHCraft Google Slides importer |
 | [winston-slides](skills/winston-slides/) | Audit or draft slide decks using Patrick Winston's MIT clarity rules |
 
