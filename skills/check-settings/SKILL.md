@@ -119,7 +119,13 @@ in `references/facts.md` (fact IDs in brackets).
    `defaultMode: "auto"` or `bypassPermissions`; absence of `deny` rules for
    sensitive reads (`.env`, `secrets`, `~/.ssh`, `~/.aws`, `~/.gnupg`): flag
    only the gaps, presence is good; MCP servers or `additionalDirectories` that
-   grant wide access. **Read the active mode first** [F13/F14]: a broad `Bash`/
+   grant wide access. **Always run this specific gap check:** when `Read` is
+   broadly allowed *and* the working dir or `additionalDirectories` covers
+   `~/.claude`, verify that `deny` includes `Read(~/.claude/.credentials.json)`
+   (the OAuth token) and, ideally, the session transcripts under
+   `~/.claude/projects/**`. This gap is easy to miss because the usual deny list
+   (`.env`, `~/.ssh`, …) looks complete while leaving Claude's own credential file
+   readable. Flag the missing rule (MEDIUM). **Read the active mode first** [F13/F14]: a broad `Bash`/
    `PowerShell` allow means something very different in `default` than in `auto`
    (which drops it and routes to the classifier). Do not describe an exposure
    without saying which mode makes it real, and verify the enforcement claim per
@@ -137,11 +143,42 @@ file.
 
 ## Severity
 
-- **CRITICAL**: Actively drains the plan limit, creates a real security exposure,
-  or silently breaks an intended behavior.
-- **MEDIUM**: Wastes tokens, relies on an inert or deprecated key, or widens
-  access more than likely intended, but the setup still works.
+Severity is the **impact if left unaddressed, evaluated in the currently active
+mode**, not how surprising the finding is. Anchor to these, and prefer the lower
+tier when torn:
+
+- **CRITICAL**: Active, present harm. It actively drains the plan limit, exposes
+  real credentials or data **in the mode the config actually runs in**, or a
+  **security/safety control the user relies on silently fails to apply**. The
+  bar is real damage now, not "you might not have noticed."
+- **MEDIUM**: The setup still works, but tokens are wasted, an inert or
+  deprecated key is relied on, or access is widened more than likely intended
+  (including a broad allow that only bites in a mode the user can switch to).
+  Treat every allow that grants **arbitrary code execution** as one class here:
+  bare `Bash`/`PowerShell`, wildcard interpreters like `Bash(python -c ...)` or
+  `Bash(python*)`, and package-manager runners are all MEDIUM when latent in a
+  switchable mode. A narrower-looking pattern or a project-local location does
+  **not** lower it, because it still permits arbitrary code. Grade `Bash` and
+  `Bash(python -c ...)` the same way.
 - **LOW**: Redundancy or imprecision with no practical impact.
+
+**Tie-breaker for inert / ignored keys** (this is where severity tends to
+wobble): an ignored or silently-inert key is **MEDIUM** by default, or **LOW**
+if nobody would notice. It rises to **CRITICAL only if the ignored key was a
+security or safety control** the user was relying on. "Silently does nothing" is
+not by itself CRITICAL. Concretely: an inert `advisorModel` (a convenience/quality
+feature) is MEDIUM, not CRITICAL, because nothing is exposed or drained. Grade the
+same finding the same way every run.
+
+**Confidence caps severity.** If a finding *would not exist* without a claim you
+could not confirm this run (an `heuristic` fact, or an enforcement claim the docs
+don't spell out, such as "a `Read()` deny doesn't cover a shell `cat`"), cap it at
+**LOW or a hedged note**, never MEDIUM+, and say what a test would settle. This is
+what keeps the same concern from swinging between a side-note and a MEDIUM across
+runs. It does **not** cap a finding that stands on confirmed facts and is only
+heuristic in a detail: the Fable-default cost finding stays MEDIUM because its core
+(expensive default, thinking always on) is doc-confirmed, only the exact cost
+magnitude is a dated heuristic.
 
 ## Output format
 
