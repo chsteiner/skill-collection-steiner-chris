@@ -17,7 +17,7 @@ tools/
 
 Each skill lives in its own folder under `skills/`. Subfolders inside a skill are fine (progressive disclosure pattern). Keep skills self-contained — don't reference files outside the skill folder.
 
-`tools/` is for companion code that a skill depends on but isn't itself a skill (e.g. the Apps Script importer for `marp-slides`). Kept out of `skills/` because `npx skills` scans that folder and would treat unrelated files as skill candidates.
+`tools/` is for companion code that a skill depends on but isn't itself a skill (e.g. an importer or consumer); currently empty, so the folder doesn't exist. Kept out of `skills/` because `npx skills` scans that folder and would treat unrelated files as skill candidates.
 
 ## Conventions
 
