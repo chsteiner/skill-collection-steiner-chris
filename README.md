@@ -9,6 +9,7 @@ Personal collection of [Claude Code](https://docs.anthropic.com/en/docs/claude-c
 | [anti-slop](skills/anti-slop/) | Detect and eliminate AI-generated writing patterns (EN/DE) |
 | [check-md](skills/check-md/) | Review markdown documents for factual errors, logic breaks, and gaps |
 | [check-settings](skills/check-settings/) | Audit a Claude Code settings.json for cost, deprecated keys, scope, and schema issues, verified against the live docs |
+| [whisper-transcription](skills/whisper-transcription/) | Transcribe audio locally with faster-whisper (GPU or CPU), with setup, result checks, and transcript limits |
 
 ## Install
 
