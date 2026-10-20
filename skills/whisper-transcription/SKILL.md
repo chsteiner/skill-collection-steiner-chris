@@ -158,10 +158,11 @@ With PyAV 19 or newer, the script reads faster-whisper's own decoding
 function before loading the model. If that function still passes
 `metadata_errors`, as it does in release 1.2.1, the script stops with
 exit code 2 and prints the fix from step 1. A faster-whisper installed
-from its main branch already has the fix, still reports version 1.2.1, and
-runs. If every file still fails with an error about `metadata_errors`
-(the check could not read the code), pin PyAV as in step 1 all the same.
-The script also prints the CUDA hint after this error when running on the
+from its `master` branch already has the fix, still reports version
+1.2.1, and runs. If every file still fails with an error about
+`metadata_errors` (the check let the run pass because it could not read
+the code or the PyAV version), pin PyAV as in step 1 all the same. The
+script also prints the CUDA hint after this error when running on the
 GPU. Ignore it then.
 
 **Sandboxes.** If a run fails only inside a sandbox (for example a library
