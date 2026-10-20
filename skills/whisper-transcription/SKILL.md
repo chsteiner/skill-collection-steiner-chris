@@ -142,8 +142,8 @@ the last program in the pipe, here `tail`. This holds in Bash unless
 `set -o pipefail` is on, and in PowerShell too, where `$LASTEXITCODE`
 follows the last native program (`tail.exe` from Git gives 0, only a
 cmdlet such as `Select-Object` at the end leaves the script's code). The
-script itself ends with a non-zero code. So run it without a pipe, read stderr, and
-look at the files:
+script itself ends with a non-zero code. So run it without a pipe, read
+stderr, and look at the files:
 
 - The script writes to `.part` files and renames them at the end. A `.txt`
   written by this run is complete.
