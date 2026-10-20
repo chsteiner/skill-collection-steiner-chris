@@ -30,11 +30,14 @@ libraries one measured 2.3 GiB, 2.0 GiB of it the libraries). Check with
 the candidate Python:
 
 ```
-<python> -c "import faster_whisper, ctranslate2; print(faster_whisper.__version__, ctranslate2.get_cuda_device_count())"
+<python> -c "import faster_whisper, av, ctranslate2; print(faster_whisper.__version__, av.__version__, ctranslate2.get_cuda_device_count())"
 ```
 
-The second number is the count of CUDA devices ctranslate2 can see. `0`
-means the run will use the CPU.
+The first two are the versions of faster-whisper and PyAV. If PyAV reads
+`19` or higher, that venv cannot decode audio with any faster-whisper
+release up to 1.2.1 (see below): ask the user, then fix it with
+`<python> -m pip install "av<19"`. The third number is the count of CUDA
+devices ctranslate2 can see. `0` means the run will use the CPU.
 
 Only if nothing exists, set one up (ask the user first, it downloads a few GB
 including the model on first run):
@@ -42,8 +45,19 @@ including the model on first run):
 ```
 python -m venv whisper-venv
 # Windows: whisper-venv\Scripts\python.exe   Linux/macOS: whisper-venv/bin/python
-<venv-python> -m pip install faster-whisper
+<venv-python> -m pip install faster-whisper "av<19"
 ```
+
+**Keep `av<19` while faster-whisper is at 1.2.1.** PyAV 19.0.0 removed the
+`metadata_errors` argument of `av.open` (its release notes). faster-whisper
+passes exactly that argument when decoding (`faster_whisper/audio.py`, in
+1.1.1, 1.2.0 and 1.2.1 alike), and these releases only require `av>=11`.
+On Python 3.12 or newer a plain install therefore pulls PyAV 19. PyAV 19
+requires Python 3.12 or newer, so older Pythons get an older PyAV, where the
+pin does no harm. The symptom would be a `TypeError` about
+`metadata_errors` on the first file. This is read from the release notes and
+the code (2026-10-20), not run. Drop the pin once a faster-whisper release
+newer than 1.2.1 is out and its changelog mentions PyAV 19.
 
 **NVIDIA GPU (optional, much faster).** Current ctranslate2 needs cuBLAS for
 CUDA 12 and cuDNN 9. If they are not installed system-wide:
@@ -139,6 +153,11 @@ If the run fails with a missing `cudnn*.dll`, `libcudnn*.so` or `cublas`
 library, the GPU setup is incomplete: fix it as in step 1, or rerun with
 `--device cpu`. This usually surfaces at the first transcription, not when
 the model loads.
+
+If every file fails with an error about `metadata_errors`, PyAV is too new
+for the installed faster-whisper: pin it as in step 1. The script also
+prints the CUDA hint after this error when running on the GPU. Ignore it
+then.
 
 **Sandboxes.** If a run fails only inside a sandbox (for example a library
 that cannot be loaded), retry outside it and tell the user why.
