@@ -25,7 +25,7 @@ favour accuracy and fail loudly instead of silently.
 ## Step 1: find or build the environment
 
 **Look before installing.** If the user already has a venv with
-faster-whisper, use it; a second environment helps nobody (with the NVIDIA
+faster-whisper, use it. A second environment helps nobody (with the NVIDIA
 libraries one measured 2.3 GiB, 2.0 GiB of it the libraries). Check with
 the candidate Python:
 
@@ -68,10 +68,10 @@ CUDA 12 and cuDNN 9. If they are not installed system-wide:
 
 - **Windows:** the script finds these pip packages itself and adds their DLL
   folders before loading the model. Nothing else to do. (The faster-whisper
-  README calls the pip route "Linux only"; with this wiring it runs on
+  README calls the pip route "Linux only". With this wiring it runs on
   Windows, tested with faster-whisper 1.2.1, ctranslate2 4.8.1,
   nvidia-cudnn-cu12 9.25.) The Windows wheel of ctranslate2 4.8.1 ships its
-  own `cudnn64_9.dll`; a run with only cuBLAS wired worked (2026-10-20).
+  own `cudnn64_9.dll`, and a run with only cuBLAS wired worked (2026-10-20).
   So on Windows `nvidia-cublas-cu12` alone may do and saves about 1 GiB.
   Keep cuDNN in the install if the ctranslate2 version differs.
 - **Linux:** `LD_LIBRARY_PATH` must point at the libraries *before* Python
@@ -110,7 +110,7 @@ so if it is started with the wrong one.
 **The language is required on purpose.** A typo fails at once instead of
 falling back to detection and producing a transcript in the wrong language
 after a long run. Ask the user for the language if it is not obvious. Use
-`auto` only when they do not know it; the script then prints what it
+`auto` only when they do not know it. The script then prints what it
 detected.
 
 Output per file: `<audio>.txt` (one segment per line,
