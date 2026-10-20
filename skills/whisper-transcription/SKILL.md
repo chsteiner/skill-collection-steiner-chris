@@ -134,10 +134,12 @@ the audio minute it has reached.
 | 2 | usage error: missing file, unknown language, wrong Python, PyAV too new |
 | 3 | no speech found in at least one file, nothing written for it |
 
-**Also check the files, not only the exit code.** With an earlier version of
-this script, a run on one Windows machine was reported as exit code 0
-although a PyAV DLL blocked by Windows Application Control had stopped it.
-The error was only on stderr. So read stderr, and look at the files:
+**Do not pipe the output, and also check the files.** On one Windows
+machine, a run stopped by a PyAV DLL that Windows Application Control had
+blocked was reported as exit code 0. The call was
+`... 2>&1 | tail -30`, and a pipe returns the exit code of its last
+command, here `tail`. The script itself ends with a non-zero code. So run
+it without a pipe, read stderr, and look at the files:
 
 - The script writes to `.part` files and renames them at the end. A `.txt`
   written by this run is complete.
