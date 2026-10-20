@@ -28,6 +28,7 @@ from __future__ import annotations
 import argparse
 import importlib.util
 import os
+import re
 import sys
 from pathlib import Path
 
@@ -97,6 +98,42 @@ def language_ok(lang: str) -> bool:
               file=sys.stderr)
         return False
     return True
+
+
+def release(version: str) -> tuple[int, ...] | None:
+    m = re.match(r"(\d+)\.(\d+)(?:\.(\d+))?", version)
+    if not m:
+        return None
+    return tuple(int(g or 0) for g in m.groups())
+
+
+def av_compatible() -> bool:
+    """PyAV 19 removed the metadata_errors argument of av.open. Release
+    1.2.1 of faster-whisper passes it in decode_audio for every file. The
+    master branch passes it only for PyAV < 19 but still reports
+    1.2.1, so the version number cannot tell: look at decode_audio itself.
+    Refuse a broken pair before the model loads (a first run downloads
+    several GB) instead of failing on each file afterwards."""
+    import inspect
+
+    import av
+    import faster_whisper
+    from faster_whisper import audio
+    av_v = release(av.__version__)
+    if av_v is None or av_v < (19, 0, 0):
+        return True  # unparsable or old enough; let the run show the rest
+    try:
+        source = inspect.getsource(audio.decode_audio)
+    except (OSError, TypeError):
+        return True  # no source to read; let the run show what happens
+    if "metadata_errors" not in source:
+        return True
+    print(f"PyAV {av.__version__} cannot decode audio with faster-whisper "
+          f"{faster_whisper.__version__} (PyAV 19 removed an argument "
+          f"faster-whisper passes). Fix:\n"
+          f'  {sys.executable} -m pip install "av<19"',
+          file=sys.stderr)
+    return False
 
 
 def pick_device(requested: str) -> str:
@@ -185,6 +222,8 @@ def main() -> int:
               file=sys.stderr)
         return 2
     if not language_ok(args.language):
+        return 2
+    if not av_compatible():
         return 2
 
     device = pick_device(args.device)

@@ -131,7 +131,7 @@ the audio minute it has reached.
 |---|---|
 | 0 | all files transcribed |
 | 1 | model could not load, or a transcription failed |
-| 2 | usage error: missing file, unknown language, wrong Python |
+| 2 | usage error: missing file, unknown language, wrong Python, PyAV too new |
 | 3 | no speech found in at least one file, nothing written for it |
 
 **Also check the files, not only the exit code.** With an earlier version of
@@ -154,10 +154,15 @@ library, the GPU setup is incomplete: fix it as in step 1, or rerun with
 `--device cpu`. This usually surfaces at the first transcription, not when
 the model loads.
 
-If every file fails with an error about `metadata_errors`, PyAV is too new
-for the installed faster-whisper: pin it as in step 1. The script also
-prints the CUDA hint after this error when running on the GPU. Ignore it
-then.
+With PyAV 19 or newer, the script reads faster-whisper's own decoding
+function before loading the model. If that function still passes
+`metadata_errors`, as it does in release 1.2.1, the script stops with
+exit code 2 and prints the fix from step 1. A faster-whisper installed
+from its main branch already has the fix, still reports version 1.2.1, and
+runs. If every file still fails with an error about `metadata_errors`
+(the check could not read the code), pin PyAV as in step 1 all the same.
+The script also prints the CUDA hint after this error when running on the
+GPU. Ignore it then.
 
 **Sandboxes.** If a run fails only inside a sandbox (for example a library
 that cannot be loaded), retry outside it and tell the user why.
