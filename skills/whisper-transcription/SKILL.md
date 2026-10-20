@@ -137,10 +137,12 @@ the audio minute it has reached.
 **Do not pipe the output, and also check the files.** On one Windows
 machine, a run stopped by a PyAV DLL that Windows Application Control had
 blocked was reported as exit code 0. The call was
-`... 2>&1 | tail -30` in Bash, and there a pipe returns the exit code of
-its last command, here `tail` (unless `set -o pipefail` is on).
-PowerShell's `$LASTEXITCODE` keeps the script's code. The script itself
-ends with a non-zero code. So run it without a pipe, read stderr, and
+`... 2>&1 | tail -30` in Bash, and what gets reported is the exit code of
+the last program in the pipe, here `tail`. This holds in Bash unless
+`set -o pipefail` is on, and in PowerShell too, where `$LASTEXITCODE`
+follows the last native program (`tail.exe` from Git gives 0, only a
+cmdlet such as `Select-Object` at the end leaves the script's code). The
+script itself ends with a non-zero code. So run it without a pipe, read stderr, and
 look at the files:
 
 - The script writes to `.part` files and renames them at the end. A `.txt`
