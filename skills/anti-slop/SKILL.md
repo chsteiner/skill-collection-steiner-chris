@@ -5,9 +5,9 @@ description: "Removes the measured writing tells of Claude Opus 4.x and Claude F
 
 # Anti-Slop
 
-Calibrated for Claude Opus 4.x and Claude Fable 5. These models do not fail through GPT-era vocabulary ("delve", "tapestry", em-dash floods); they fail through structure and rhetoric: too much formatting, everything in threes, contrast figures as punchlines, endings polished into aphorisms. Every rule below is backed by a corpus measurement of both models' own cold-prompt output (see Basis).
+Calibrated for Claude Opus 4.x and Claude Fable 5. These models do not fail through GPT-era vocabulary ("delve", "tapestry", em-dash floods); they fail through structure and rhetoric: too much formatting, everything in threes, contrast figures as punchlines, endings polished into aphorisms. Rules 1 to 8 are backed by a corpus measurement of both models' own cold-prompt output, rule 9 by a count in Opus-written German prose (see Basis).
 
-The master heuristic: look for clusters of patterns, not single hits. One contrast figure is writing; three of them plus a bold-lead scaffold plus an aphorism ending is slop. (Exceptions: rules 6 and 8 are zero-tolerance for text you produce, and a contrast figure as the closing line is a finding on its own.)
+The master heuristic: look for clusters of patterns, not single hits. One contrast figure is writing; three of them plus a bold-lead scaffold plus an aphorism ending is slop. (Exceptions: rules 6, 8 and 9 are zero-tolerance for text you produce, and a contrast figure as the closing line is a finding on its own.)
 
 ## Modes
 
@@ -41,10 +41,12 @@ In both modes, fenced or inline code and verbatim quotations are exempt from all
 
 8. **Em dashes: zero in text you produce or rewrite.** No em dash and no spaced en dash as a thought-dash, in both languages: use a colon, comma, parentheses, or a new sentence. In audits, list em-dash use as a finding (noting when it reads as deliberate authorial voice); in rewrites, replace it.
 
+9. **No "tragen" as a metaphor of support: zero in German prose you produce or rewrite.** Opus uses "tragen" for anything that holds, justifies, bears weight, or survives: "trägt die Software jede weitere Prüfrunde", "die Begründung trägt nicht", "eine tragende Zahl", "was etwas getragen hat", "das trägt das Argument". It reads as translated "load-bearing" and marks a text as Opus-written on sight, especially in proposals (Anträge), reports, and emails. Name the actual relation instead: "hält stand", "übersteht", "reicht", "begründet", "stützt", "entscheidend", "wichtig", "worauf es ankommt", or rebuild the sentence around the real verb. Literal and fixed uses stay ("eine Tasche tragen", "Kosten tragen", "trägt den Titel", "Rechnung tragen"). The English counterparts "load-bearing" and "carries the weight" fall under the same rule. In audits, list each metaphorical use as a finding; in rewrites, replace it.
+
 ## Guardrails: don't over-correct
 
-- The cluster heuristic governs rules 1 to 5 and 7: one hit is not a finding. Rules 6 and 8 are the stated exceptions.
-- Don't staccato. Cutting is good; three-word fragment chains are the same disease in reverse. Vary sentence length, keep load-bearing connectors ("but", "because", "sondern" inside a real argument).
+- The cluster heuristic governs rules 1 to 5 and 7: one hit is not a finding. Rules 6, 8 and 9 are the stated exceptions.
+- Don't staccato. Cutting is good; three-word fragment chains are the same disease in reverse. Vary sentence length, keep connectors that do real work ("but", "because", "sondern" inside a real argument).
 - Context decides. A postmortem may be structured, a README may use bullets, a real ranking may be a list. The rules target prose registers, not reference material.
 - Author voice protects what is not on the rules list: slang, register mixing, long sentences, unusual metaphors, deliberate repetition. Clustered rule patterns are still worth reporting in human-written text, but report them as observations and leave the call to the author. When unsure, keep it: a wrong cut damages the text, a missed one is just a missed fix.
 - Translations and close paraphrases preserve the source's rhetorical patterns, including its triads and contrasts; deslop the rendering only if the user asks for that.
@@ -57,3 +59,5 @@ GPT-era word lists (delve, tapestry, testament, landscape, journey...) are delib
 ## Basis
 
 Own cold-prompt corpus measurement, July 2026: 80 texts (20 per model per language, DE and EN, business/docs/blog registers), lexical over-representation against a wordfreq baseline plus structural pattern counts. Cross-checked against EQ-Bench slop profiles, Anthropic's Fable 5 prompting guidance and system-prompt word bans (genuinely, honestly, straightforward), and community observation (mid-2026).
+
+Rule 9: user observation on Opus-drafted German prose, November 2026, plus a count in a private German rules-and-docs repository drafted with Opus: 92 forms of "tragen" in 13,965 words (6.6 per 1,000) against a wordfreq baseline of 0.27 per 1,000 for the same forms, about 24x. Not a cold-prompt measurement, and the count does not separate literal from metaphorical uses.
