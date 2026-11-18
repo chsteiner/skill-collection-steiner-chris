@@ -5,7 +5,7 @@ description: "Removes the writing tells of the Claude Opus and Fable model famil
 
 # Anti-Slop
 
-Calibrated for the Claude Opus and Fable model families. In recent Opus output the old marker words and the em dashes have largely gone. What stays, and in part grows, is structure: formatting where prose belongs, bold-lead bullets, contrast figures, announced importance, slogan and summary endings, invented detail. Fable shares most of these. In the measured Fable texts dashes are rare and semicolons more frequent than in recent Opus text, and in reports after long work its prose can run dense, with labels it coined along the way. The rules describe mechanisms. Their examples show what a hit looks like and are not a list of banned words. Measurements and sources: `references/basis.md`.
+Calibrated for the Claude Opus and Fable model families. In recent Opus output the old marker words and the em dashes have largely gone. What stays, and in part grows, is structure: formatting where prose belongs, bold-lead bullets, contrast figures, announced importance, slogan and summary endings, invented detail. Fable shares most of these. In the November 2026 Fable measurement dashes are rare and semicolons more frequent than in recent Opus text, and in reports after long work its prose can run dense, with labels it coined along the way. The rules describe mechanisms. Their examples show what a hit looks like and are not a list of banned words. Measurements and sources: `references/basis.md`.
 
 The master heuristic: look for clusters of patterns, not single hits. One contrast figure is writing. Three of them plus a bold-lead scaffold plus a slogan ending is slop. Exceptions: rules 6 and 8, the German "tragen" case of rule 9 and the coined labels of rule 10 count on a single hit in text you produce, and in model-generated text the closing line (rules 3 and 4) is a finding on its own. For human text, see Guardrails.
 
@@ -50,7 +50,7 @@ In both modes, fenced or inline code and verbatim quotations are exempt from all
 ## Guardrails: don't over-correct
 
 - The cluster heuristic governs rules 1, 2, 5, 7, 9 (apart from "tragen"), the density part of rule 10, and the contrast count in rule 3: one hit is not a finding. Rules 6 and 8, the German "tragen" case of rule 9, the coined labels of rule 10 and the closing line are the stated exceptions. The German marker words at the end of rule 9 follow the rule 5 threshold.
-- A single-hit rule asks for a rebuilt sentence, not a look-alike. Swapping "load-bearing" for "foundational" in a sentence that still stages the same building metaphor fixes nothing.
+- A single-hit rule asks for a rebuilt sentence, not a look-alike. Swapping "trägt" for "schultert" in a sentence that still stages the same load metaphor fixes nothing.
 - Neither staccato nor wall. Three-word fragment chains are the same disease in reverse, and so is a paragraph that packs several claims into long sentences. Split a sentence that makes more than one claim, break a paragraph where the topic turns, and keep the connectors that do the arguing ("but", "because", "sondern" inside a real argument). Don't impose hard limits on sentence length: they make prose choppy.
 - Context decides. A postmortem may be structured, a README may use bullets, a real ranking may be a list. Stripping structure the content needs is a failure too.
 - Author voice protects what is not on the rules list: slang, register mixing, long sentences, unusual metaphors, deliberate repetition. Human writers use contrast figures, dashes, and punchlines as well, and a satirist's aphorism is not slop. Clustered rule patterns are still worth reporting in human-written text, but report them as observations and leave the call to the author. When unsure, keep it: a wrong cut damages the text, a missed one is just a missed fix.
@@ -59,4 +59,4 @@ In both modes, fenced or inline code and verbatim quotations are exempt from all
 
 ## Out of scope
 
-GPT-era word lists (delve, tapestry, testament, landscape, journey...) are not part of this skill: those words are rare in the measured Opus and Fable texts (`references/basis.md`). Text from other model families needs its own vocabulary check.
+GPT-era word lists (delve, tapestry, testament, landscape, journey...) are not part of this skill: those words are rare in the September and November 2026 measurements of Opus and Fable text (`references/basis.md`). Text from other model families needs its own vocabulary check.
