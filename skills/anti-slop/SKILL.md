@@ -1,11 +1,11 @@
 ---
 name: anti-slop
-description: "Removes the measured writing tells of Claude Opus 4.x and Claude Fable 5 in prose: over-formatting, triad scaffolding, contrast cliches, polished punchline endings, hollow emphasis, invented specificity. Works two ways: as a silent self-check while generating reports, articles, emails, or documentation, and as an explicit audit of existing text. Covers English and German. Use whenever the user asks to 'check for slop', 'deslop' something, or 'anti-slop mode', and also whenever they say a text sounds AI-generated, robotic, generic, stiff, or 'like ChatGPT wrote it', want writing to 'sound human', or ask to cut cliches, filler, or empty phrases (German: Floskeln, leere Phrasen), even if they never say the word 'slop'. Also applies when generating prose deliverables longer than ~200 words. Not for code, commit messages, terminal output, structured data, or quick throwaway drafts."
+description: "Removes the measured writing tells of the Claude Opus and Fable model families in prose: over-formatting, triad scaffolding, contrast cliches, polished punchline endings, hollow emphasis, invented specificity. Works two ways: as a silent self-check while generating reports, articles, emails, or documentation, and as an explicit audit of existing text. Covers English and German. Use whenever the user asks to 'check for slop', 'deslop' something, or 'anti-slop mode', and also whenever they say a text sounds AI-generated, robotic, generic, stiff, or 'like ChatGPT wrote it', want writing to 'sound human', or ask to cut cliches, filler, or empty phrases (German: Floskeln, leere Phrasen), even if they never say the word 'slop'. Also applies when generating prose deliverables longer than ~200 words. Not for code, commit messages, terminal output, structured data, or quick throwaway drafts."
 ---
 
 # Anti-Slop
 
-Calibrated for Claude Opus 4.x and Claude Fable 5. These models do not fail through GPT-era vocabulary ("delve", "tapestry", em-dash floods); they fail through structure and rhetoric: too much formatting, everything in threes, contrast figures as punchlines, endings polished into aphorisms. Rules 1 to 8 are backed by a corpus measurement of both models' own cold-prompt output, rule 9 by a count in German prose drafted with Opus 5 and 5.5 (see Basis).
+Calibrated for the Claude Opus and Fable model families. These models do not fail through GPT-era vocabulary ("delve", "tapestry", em-dash floods); they fail through structure and rhetoric: too much formatting, everything in threes, contrast figures as punchlines, endings polished into aphorisms. Rules 1 to 8 are backed by a corpus measurement of Opus 4.x and Fable 5 cold-prompt output, rule 9 by a count in German prose drafted with Opus 5 and 5.5 (see Basis).
 
 The master heuristic: look for clusters of patterns, not single hits. One contrast figure is writing; three of them plus a bold-lead scaffold plus an aphorism ending is slop. (Exceptions: rules 6, 8 and 9, the latter without its closing marker words, are zero-tolerance for text you produce, and a contrast figure as the closing line is a finding on its own.)
 
@@ -55,7 +55,7 @@ In both modes, fenced or inline code and verbatim quotations are exempt from all
 
 ## Out of scope
 
-GPT-era word lists (delve, tapestry, testament, landscape, journey...) are deliberately absent: they are not priority markers for Opus 4.x or Fable 5. When auditing text that came from other model families, check vocabulary separately.
+GPT-era word lists (delve, tapestry, testament, landscape, journey...) are deliberately absent: they were not priority markers in the Opus 4.x and Fable 5 measurement (see Basis). When auditing text that came from other model families, check vocabulary separately.
 
 ## Basis
 
