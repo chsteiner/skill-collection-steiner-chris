@@ -1,0 +1,6 @@
+# Fehlerjournal
+
+Fehlerzähler nach `claude-code-setup/rules/wiederholte-fehler.md`.
+
+1. 24.09.2026: „Den Skill `/deep-research` gibt es hier nicht“ geschrieben, nachdem nur die Skill-Liste durchsucht war; es ist ein gespeicherter Workflow. Darauf stand der Vorschlag eines Ersatz-Workflows, Christian hat korrigiert. Nicht gegriffen: `dateisuche.md`, „Ein leerer Abruf ist kein Nullbefund“ (Zuschnitt: Suchmenge Skills statt Skills und Workflows), Fall wie #73. Letzte Zeile zu dieser Lehre in diesem Projekt: keine.
+2. 18.11.2026: Christian die Frage vorgelegt, ob die Juli-Messung des anti-slop-Skills neu laufen soll, ohne den bisherigen Stand zu nennen: den nicht gemergten Branch `anti-slop-2026-09` mit eigener Nachkalibrierung (280 Texte, DE und EN) und den gitignorierten Ordner `skills/anti-slop-workspace/` mit Bericht. Er hat auf dieser Grundlage abgewählt, die Planprüfung (Opus) hat den Branch gefunden, die Frage ging neu an ihn. Im Plan stand außerdem „kein Fehlerjournal im Repo“, gemessen nur an main. Nicht gegriffen: `entscheidungsfragen.md`, „Eine Entscheidungsfrage an mich nur mit dem bisherigen Stand daneben“ (gesucht hatte ich weder `git branch -a` noch die gitignorierten Ordner im Skill). Letzte Zeile zu dieser Lehre in diesem Projekt: keine.
